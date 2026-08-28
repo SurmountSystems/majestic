@@ -1,0 +1,138 @@
+.TH MEMEX-SEARCH 1 "August 2026" "memex 0.1.0" "User Commands"
+.SH NAME
+memex-search \- search memex archives with PCRE2 patterns
+.SH SYNOPSIS
+.B memex search
+.RI [ -i ]
+.RI [ -w ]
+.RI [ -F ]
+.RI [ -m " N]"
+.I PATTERN
+.RI [ ARCHIVE ]
+.PP
+.B memex search
+.RI [ -i ]
+.RI [ -w ]
+.RI [ -F ]
+.RI [ -m " N]"
+.B --service
+.I FOLDER
+.B --account
+.I NAME
+.I PATTERN
+.SH DESCRIPTION
+.B memex search
+searches mmap archives under
+.BR ~/memex .
+With no
+.BR --service ,
+no
+.BR --account ,
+and no archive path, the search is systemwide: every
+.B *.majestic
+under
+.B $HOME/memex ,
+leftover
+.B *.archive
+when there is no sibling same-stem
+.BR .majestic .
+Open maps the
+.B .majestic
+file with
+.B PROT_READ
+and
+.BR MAP_SHARED .
+That is a virtual mapping of the file, not a heap allocation of the file size.
+Search reads that map. It does not copy the text blob into a
+.BR Vec .
+RSS is the pages the CPU has faulted, not the file size at mmap. The intended
+page for text is 2 MiB. New ingest pads so text starts at a 2 MiB file offset.
+A systemwide search maps all listed archives, holds those maps, compiles PCRE2
+once, then runs PCRE2 on already-mapped text with min(file count, available
+parallelism) workers. Search does not call
+.B MADV_DONTNEED
+after every archive while the search is still running. Hits are unique and
+grouped by archive path, then conversation id. Default print cap is 100 unique
+hits per archive.
+It does not walk
+.B $HOME
+for live export dumps. Ingest owns discovery. It does not mmap
+.BR .zst .
+It does not spawn
+.BR rg .
+.PP
+Search uses mmap text, grep-searcher, and grep-pcre2 only. Patterns are PCRE2
+(the same engine as
+.BR "rg -P" ).
+There is no PCRE1 and no rust-regex fallback.
+.PP
+.B --service
+and
+.B --account
+together, or an explicit archive path, search one file and do not scan home.
+.PP
+Durable search flags may be set in
+.I ~/.config/majestic/memex.toml
+under
+.B [search]
+.RI ( ignore_case ,
+.IR fixed_strings ,
+.IR word_regexp ,
+.IR max_count ,
+.IR archive ).
+A missing file uses crate defaults (flags false, max_count 100, archive unset). CLI flags
+override the file.
+.SH OPTIONS
+.TP
+.BR -i ", " --ignore-case
+Case insensitive (Unicode).
+.TP
+.BR -w ", " --word-regexp
+Whole word. Without
+.BR -w ,
+a match may sit inside a stored word.
+.TP
+.BR -F ", " --fixed-strings
+Phrase or literal string.
+.TP
+.BR -m " N" ", " --max-count " N"
+Unique hits printed per archive. Default 100. 0 means no cap.
+.TP
+.BI --service " FOLDER"
+Folder under
+.B $HOME/memex
+(for example
+.BR agents/grok ).
+.TP
+.BI --account " NAME"
+Username file stem.
+.SH SEARCH PATTERNS
+.nf
+Want                 Pattern
+OR                   lizard|catfooding
+AND, any order       (?=.*lizard)(?=.*the)
+Phrase               'hello world'  or  -F 'hello world'
+Case insensitive     -i
+Whole word           -w
+.fi
+.PP
+A
+.B |
+in the pattern is OR. AND any order uses lookaheads.
+.B -i
+is case insensitive.
+.B -w
+is whole word.
+.B -F
+is a phrase or literal.
+.SH EXAMPLES
+.nf
+memex search 'lizard|catfooding'
+memex search '(?=.*lizard)(?=.*the)'
+memex search -F 'hello world'
+memex search -i catfooding
+memex search -w food
+memex search --service agents/grok --account personal PATTERN
+.fi
+.SH SEE ALSO
+.BR memex (1)

@@ -1,0 +1,6 @@
+[toolchain]
+# Pin manually; bump one point at a time after a short soak.
+# Match fenix fromToolchainFile sha256 in flake.nix when changing channel.
+channel = "1.98.0"
+components = ["rustfmt", "clippy", "rust-src"]
+profile = "default"

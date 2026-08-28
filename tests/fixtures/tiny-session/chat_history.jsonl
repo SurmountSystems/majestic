@@ -1,0 +1,2 @@
+{"type":"user","content":"synthetic grok-oss user line","picky_session_gate":true}
+{"type":"assistant","content":"synthetic grok-oss assistant line","model_id":"synthetic-model"}

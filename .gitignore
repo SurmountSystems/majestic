@@ -1,0 +1,6 @@
+/target
+*.majestic
+
+# Nix
+/result
+/result-*

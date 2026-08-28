@@ -1,0 +1,67 @@
+# Example memex settings. Copy to ~/.config/majestic/memex.toml and edit.
+# That path is $XDG_CONFIG_HOME/majestic/memex.toml. It is not ~/.config/memex/
+# and not ~/majestic/memex.toml.
+#
+# A missing file is fine. memex then uses crate defaults.
+# MEMEX_CONFIG may point at another TOML path (a leading ~ expands to $HOME).
+# Command-line flags override this file. Skip lists have no flags; they live here.
+#
+# Layers: crate defaults, then this file (figment), then MEMEX_* environment
+# variables (nested keys use a double underscore, for example
+# MEMEX_SEARCH__IGNORE_CASE), then flags you passed. MEMEX_CONFIG is the file
+# path only. MEMEX_LOG and RUST_LOG set the terminal tracing filter; they are
+# not this [log] table.
+#
+# Extra skip_directories are per machine. Crate defaults skip system trash
+# (XDG Trash, directory name .Trash, and names that start with .Trash-) and
+# do not skip extra personal directories. Do not treat any extra path in a
+# copied file as a skip that every install uses. Uncomment the example extra
+# skip if you want that directory skipped on this machine only.
+
+memex_dir = "~/memex"
+
+[scan]
+home_scan_max_depth = 8
+skip_directories = []
+# skip_directories = ["~/example-skip"]
+skip_system_trash = true
+
+[search]
+ignore_case = false
+fixed_strings = false
+word_regexp = false
+max_count = 100
+# archive = "~/memex/agents/grok/example.majestic"
+
+[ingest]
+# output = "~/memex/agents/grok/example.majestic"
+inputs = []
+
+[scope]
+# service = "agents/grok"
+# account = "example"
+
+[stats]
+# archive = "~/memex/agents/grok/example.majestic"
+
+[serve]
+bind = "127.0.0.1:8741"
+
+[compress]
+level = 3
+
+[zip]
+max_uncompressed_bytes = 8589934592
+
+[log]
+filter = "info"
+
+[jobs]
+# rayon_threads = 8
+# Ingest hashing only. Search maps listed archives, then PCRE2 on those maps.
+
+[bench_zstd]
+dir = "~/memex"
+jsonl = "~/memex/bench-zstd/report.jsonl"
+report = "~/memex/bench-zstd/report.md"
+re_ingest = false

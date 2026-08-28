@@ -1,0 +1,15 @@
+{
+  "name": "synth chat",
+  "type": "personal_chat",
+  "id": 1,
+  "messages": [
+    {
+      "id": 1,
+      "type": "message",
+      "date": "2026-01-01T00:00:00",
+      "from": "synth-from",
+      "from_id": "user1",
+      "text": "Catfooding telegram fixture"
+    }
+  ]
+}

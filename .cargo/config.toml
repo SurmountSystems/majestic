@@ -1,0 +1,5 @@
+# wild linker. Do not copy menhera registry (that lives in user cargo config).
+# Do not set jobs or target-cpu here: cargo picks CPU count, and native is
+# wrong on other CPUs.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=wild"]

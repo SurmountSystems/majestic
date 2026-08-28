@@ -1,0 +1,346 @@
+.TH MEMEX 1 "August 2026" "memex 0.1.0" "User Commands"
+.SH NAME
+memex \- personal memex ingest, search, stats, and compress
+.SH SYNOPSIS
+.B memex
+.I COMMAND
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+.B memex
+is the command for crate
+.BR majestic .
+It ingests account data exports into mmap archives and searches those archives
+with PCRE2.
+.PP
+The crate lives at
+.BR ~/majestic .
+The data directory is
+.BR ~/memex
+(file key
+.BR memex_dir ,
+default
+.BR ~/memex ).
+Number 0012 is Majestic Memex and is specified. This command is still a proof
+of concept. It is not that numbered specification.
+.PP
+Search uses mmap text, grep-searcher, and grep-pcre2 only. Patterns are PCRE2
+(the same engine as
+.BR "rg -P" ).
+There is no PCRE1 and no rust-regex fallback.
+.SH COMMANDS
+.TP
+.B ingest
+Ingest Grok dumps, ChatGPT conversations, Facebook DYI zips, X account
+archives, Telegram
+.BR result.json ,
+session JSONL, markdown, Obsidian, reports, or session_docs sqlite.
+With no paths,
+.B memex ingest
+scans
+.B $HOME
+for known export shapes. Home scan skips system trash by default. Extra skips
+belong in
+.B skip_directories
+in the config file. Crate defaults do not skip
+.BR ~/.agents/trash .
+.TP
+.B search
+Search mmap archives under
+.BR ~/memex .
+See
+.BR memex-search (1)
+and
+.B SEARCH PATTERNS
+below.
+.TP
+.B stats
+Print archive counts. Needs
+.B --service
+and
+.BR --account ,
+or an explicit archive path.
+.TP
+.B compress
+Write
+.B FILE.zst
+next to each uncompressed archive (zstd level 3, no dictionary). Never deletes
+the input.
+.TP
+.B decompress
+Write
+.B FILE
+without
+.BR .zst .
+Never deletes the
+.BR .zst .
+.TP
+.B mcp
+JSON-RPC 2.0 MCP on stdin/stdout. Default is JSON, one object per line.
+.B --toon
+is Token-Oriented Object Notation for language-model tools (one TOON
+document then a blank line). Spec:
+.IR https://github.com/toon-format/spec
+(accessed: 2026-08-27). Media type
+.BR text/toon .
+Terminal logs are error and info on stderr. Full logs:
+.BR "journalctl --user -t memex" .
+.TP
+.B serve
+The same MCP JSON-RPC over HTTP. Default bind is loopback
+.BR 127.0.0.1:8741 .
+No auth. No TLS. JSON default.
+.B --toon ,
+.BR "Accept: text/toon" ,
+or
+.B format=toon
+select TOON. Request
+.B Content-Type: text/toon
+is accepted.
+.TP
+.B acp
+ACP-shaped NDJSON JSON-RPC on stdin/stdout. JSON default.
+.B --toon
+is TOON for language-model tools.
+.TP
+.B bench-zstd
+Zstd bench of uncompressed archives. Does not delete sources or Downloads.
+.SH OPTIONS
+.TP
+.BI --memex-dir " DIR"
+Memex data directory. Default is
+.BR $HOME/memex .
+File key
+.BR memex_dir .
+Overrides the config file. Global.
+.PP
+.TP
+.B --toon
+On
+.BR mcp ,
+.BR acp ,
+and
+.BR serve :
+respond in TOON (
+.BR text/toon )
+for language-model tools. Default is JSON for humans. Spec:
+.IR https://github.com/toon-format/spec
+(accessed: 2026-08-27).
+.PP
+Subcommand flags such as
+.BR -i ,
+.BR -F ,
+.BR -w ,
+.BR --bind ,
+.BR --toon ,
+.BR --service ,
+and
+.B --account
+override the matching file keys when you pass them. Skip lists have no flags.
+They live under
+.B [scan]
+in the config file. There is no
+.B --config
+flag. Set
+.B MEMEX_CONFIG
+to choose another TOML path.
+.SH CONFIGURATION
+Optional settings live at
+.I ~/.config/majestic/memex.toml
+(that is
+.I $XDG_CONFIG_HOME/majestic/memex.toml
+when
+.B XDG_CONFIG_HOME
+is set). That is not
+.I ~/.config/memex/
+and not
+.IR ~/majestic/memex.toml .
+A missing file uses crate defaults. You do not have to create the file.
+.PP
+Layers are crate defaults, then that TOML file (figment), then
+.B MEMEX_*
+environment variables, then flags you passed. CLI flags override the file.
+Figment overlays layers. confy cannot. The
+.B directories
+crate supplies the XDG config directory.
+.PP
+Home scan skips system trash by default: XDG Trash
+.RI ( $XDG_DATA_HOME/Trash ,
+usually
+.IR ~/.local/share/Trash ),
+directory name
+.BR .Trash ,
+and names that start with
+.BR .Trash- .
+That skip does not include all of
+.BR /tmp .
+Extra directories belong in
+.B skip_directories
+on that machine. Crate defaults do not skip
+.BR ~/.agents/trash .
+A committed example with every key is
+.I docs/memex.toml.example
+in the crate. That example sets
+.B skip_directories
+to an empty list and comments one extra path that is not machine-specific.
+.PP
+Keys:
+.BR memex_dir ,
+.BR scan.home_scan_max_depth
+(default 8),
+.BR scan.skip_directories ,
+.BR scan.skip_system_trash
+(default true),
+.BR search.ignore_case ,
+.BR search.fixed_strings ,
+.BR search.word_regexp ,
+.BR search.archive ,
+.BR ingest.output ,
+.BR ingest.inputs ,
+.BR scope.service ,
+.BR scope.account ,
+.BR stats.archive ,
+.BR serve.bind
+(default
+.BR 127.0.0.1:8741 ),
+.BR compress.level
+(default 3),
+.BR zip.max_uncompressed_bytes
+(default 8 GiB),
+.BR log.filter
+(default
+.BR info ),
+.BR jobs.rayon_threads ,
+.BR bench_zstd.dir ,
+.BR bench_zstd.jsonl ,
+.BR bench_zstd.report ,
+.BR bench_zstd.re_ingest .
+Path-valued keys expand a leading
+.BR ~ .
+.SH SEARCH PATTERNS
+Patterns are PCRE2.
+.B -i
+is case insensitive.
+.B -w
+is whole word.
+.B -F
+is a phrase or literal.
+.B |
+is OR. AND any order uses lookaheads.
+.PP
+.nf
+Want                 Pattern
+OR                   lizard|catfooding
+AND, any order       (?=.*lizard)(?=.*the)
+Phrase               'hello world'  or  -F 'hello world'
+Case insensitive     -i
+Whole word           -w
+.fi
+.PP
+Examples:
+.PP
+.nf
+memex search 'lizard|catfooding'
+memex search '(?=.*lizard)(?=.*the)'
+memex search -F 'hello world'
+memex search -i catfooding
+memex search -w food
+.fi
+.SH LOGGING
+The terminal shows error and info by default. It does not show warn, debug, or
+trace. Permission denied is an error. Expected skips are debug in the journal,
+not on the terminal. Full logs use syslog identifier
+.BR memex :
+.PP
+.nf
+journalctl --user SYSLOG_IDENTIFIER=memex
+journalctl --user -t memex
+.fi
+.PP
+Override the terminal with
+.B MEMEX_LOG
+or
+.BR RUST_LOG .
+If those are unset,
+.B [log] filter
+in
+.I ~/.config/majestic/memex.toml
+applies (default
+.B info
+means error and info, not warn). The journal always keeps the full log. If
+journald is missing, the terminal still works and the journal layer is skipped.
+.SH ENVIRONMENT
+.TP
+.B MEMEX_CONFIG
+Path to a TOML file. Overrides
+.IR $XDG_CONFIG_HOME/majestic/memex.toml .
+A leading
+.B ~
+expands to
+.BR $HOME .
+.TP
+.B MEMEX_LOG
+Terminal tracing filter. Wins over
+.B RUST_LOG
+and over
+.B [log] filter
+in the TOML file. Not a figment overlay of the
+.B [log]
+table.
+.TP
+.B RUST_LOG
+Terminal tracing filter when
+.B MEMEX_LOG
+is unset.
+.TP
+.B HOME
+User home. Default data directory is
+.BR $HOME/memex .
+.TP
+.B XDG_CONFIG_HOME
+Base for
+.IR majestic/memex.toml .
+When unset, memex uses
+.IR ~/.config/majestic/memex.toml .
+.TP
+.B XDG_DATA_HOME
+Base for XDG Trash
+.RI ( $XDG_DATA_HOME/Trash )
+when
+.B skip_system_trash
+is true. When unset, that trash is
+.IR ~/.local/share/Trash .
+.PP
+Other
+.B MEMEX_*
+variables overlay TOML keys. Nested keys use a double underscore after the
+.B MEMEX_
+prefix (for example
+.BR MEMEX_SEARCH__IGNORE_CASE ).
+.SH FILES
+.TP
+.I ~/.config/majestic/memex.toml
+Optional user settings
+.RI ( $XDG_CONFIG_HOME/majestic/memex.toml ).
+A missing file uses crate defaults.
+.TP
+.I docs/memex.toml.example
+Committed example with every key. Not machine-specific.
+.TP
+.I ~/majestic
+Crate source. The command is still a proof of concept.
+.TP
+.I ~/memex/{service}/{account}.majestic
+Archive files. Leftover
+.B .archive
+files are listed when there is no sibling same-stem
+.BR .majestic .
+Do not mmap
+.BR .zst .
+.SH SEE ALSO
+.BR memex-search (1)
+.PP
+Crate README and AGENTS.md live in
+.IR ~/majestic .
+Concise American Technical English
+(https://github.com/SurmountSystems/specs/blob/main/0005_CATE.md,
+accessed: 2026-08-27).

@@ -1,0 +1,33 @@
+[
+  {
+    "title": "Synthetic ChatGPT shard one",
+    "create_time": 1700000100.0,
+    "update_time": 1700000101.0,
+    "conversation_id": "synth-chatgpt-convo-1",
+    "mapping": {
+      "client-created-root": {
+        "id": "client-created-root",
+        "message": null,
+        "parent": null,
+        "children": ["synth-node-user-1"]
+      },
+      "synth-node-user-1": {
+        "id": "synth-node-user-1",
+        "parent": "client-created-root",
+        "children": [],
+        "message": {
+          "id": "synth-node-user-1",
+          "author": { "role": "user" },
+          "create_time": 1700000100.0,
+          "content": {
+            "content_type": "text",
+            "parts": ["chatgpt-search-token-shard-bb22"]
+          }
+        }
+      }
+    },
+    "current_node": "synth-node-user-1",
+    "is_archived": false,
+    "synth_gate": true
+  }
+]

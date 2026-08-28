@@ -1,0 +1,53 @@
+[
+  {
+    "title": "Synthetic ChatGPT shard zero",
+    "create_time": 1700000000.0,
+    "update_time": 1700000001.0,
+    "conversation_id": "synth-chatgpt-convo-0",
+    "mapping": {
+      "client-created-root": {
+        "id": "client-created-root",
+        "message": null,
+        "parent": null,
+        "children": ["synth-node-user-0"]
+      },
+      "synth-node-user-0": {
+        "id": "synth-node-user-0",
+        "parent": "client-created-root",
+        "children": ["synth-node-assistant-0"],
+        "message": {
+          "id": "synth-node-user-0",
+          "author": { "role": "user" },
+          "create_time": 1700000000.0,
+          "content": {
+            "content_type": "text",
+            "parts": ["Catfooding chatgpt-search-token-lizard-aa11"]
+          }
+        }
+      },
+      "synth-node-assistant-0": {
+        "id": "synth-node-assistant-0",
+        "parent": "synth-node-user-0",
+        "children": [],
+        "message": {
+          "id": "synth-node-assistant-0",
+          "author": { "role": "assistant" },
+          "create_time": 1700000001.0,
+          "content": {
+            "content_type": "text",
+            "parts": ["the synthetic ChatGPT reply"]
+          }
+        }
+      }
+    },
+    "moderation_results": [],
+    "current_node": "synth-node-assistant-0",
+    "plugin_ids": null,
+    "conversation_template_id": null,
+    "gizmo_id": null,
+    "is_archived": false,
+    "safe_urls": [],
+    "default_model_slug": "gpt-4",
+    "synth_gate": true
+  }
+]

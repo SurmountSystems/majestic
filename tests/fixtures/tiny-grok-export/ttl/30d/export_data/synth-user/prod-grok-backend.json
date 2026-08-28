@@ -1,0 +1,35 @@
+{
+  "conversations": [
+    {
+      "conversation": {
+        "id": "synthetic-conversation-1",
+        "title": "Synthetic lossless fixture",
+        "create_time": "2026-08-01T12:00:00.000Z",
+        "modify_time": "2026-08-01T13:00:00.000Z",
+        "starred": false,
+        "temporary": false,
+        "picky_gate": true
+      },
+      "responses": [
+        {
+          "response": {
+            "_id": "synthetic-response-1",
+            "conversation_id": "synthetic-conversation-1",
+            "create_time": {
+              "$date": {
+                "$numberLong": "1234567890123"
+              }
+            },
+            "message": "Catfooding the synthetic fixture.",
+            "sender": "assistant",
+            "model": "synthetic-model"
+          },
+          "share_link": null
+        }
+      ]
+    }
+  ],
+  "media_posts": [],
+  "projects": [],
+  "tasks": []
+}

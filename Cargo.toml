@@ -1,0 +1,60 @@
+[package]
+name = "majestic"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Unlicense"
+description = "A personal memex with agentic support for lossless ingest, efficient encoding, and ripgrep-style search of account data exports"
+readme = "README.md"
+keywords = ["memex", "archive", "search", "mmap", "rkyv"]
+categories = ["command-line-utilities", "encoding", "filesystem"]
+publish = true
+autobins = false
+default-run = "memex"
+
+[[bin]]
+name = "memex"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8"
+bao-tree = { version = "0.16", default-features = false }
+clap = { version = "4", features = ["derive"] }
+directories = "5"
+figment = { version = "0.10", features = ["env", "toml"] }
+fst = "0.4"
+# PCRE2 always (same engine as `rg -P`). Lookahead AND; not rust-regex / PCRE1.
+grep-matcher = "0.1"
+grep-pcre2 = "0.1"
+grep-searcher = "0.1"
+memmap2 = "0.9"
+rayon = "1"
+rkyv = { version = "0.8", features = ["unaligned", "bytecheck", "pointer_width_64"] }
+# Read-only ingest of grok-oss session_docs. Not the memex store.
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time"] }
+# Official TOON encoder. Default features pull a CLI; library encode/decode only.
+# Spec: https://github.com/toon-format/spec (accessed: 2026-08-27).
+toon-format = { version = "0.5", default-features = false }
+tracing = "0.1"
+tracing-journald = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Stream zip entries via Read. Do not extract to disk. Do not dump a whole entry.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+zstd = { version = "0.13", features = ["zdict_builder"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+tower = { version = "0.5", features = ["util"] }
+zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
