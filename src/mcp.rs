@@ -116,13 +116,13 @@ fn tool_defs() -> Vec<Value> {
         ),
         tool(
             "search",
-            "Search mmap archives under $HOME/memex. Default is every archive. It does not walk $HOME for live export dumps. Optional service+account or archive searches one file. Pattern is PCRE2 (always, same as rg -P; no pcre2 flag). ignore_case is case insensitive (-i). fixed_strings is a phrase or literal (-F). word_regexp is whole word (-w). OR: lizard|catfooding. AND any order: (?=.*lizard)(?=.*the).",
+            "Search mmap archives under $HOME/memex. Default is every archive. It does not walk $HOME for live export dumps. Optional service+account or archive searches one file. Pattern is a human query unless slash-wrapped /regex/flags (PCRE2, same as rg -P; no pcre2 flag). ignore_case is case insensitive (-i). fixed_strings is a phrase or literal (-F). word_regexp is whole word (-w). Human OR: lizard OR catfooding. Human AND: lizard AND the (bare words are implicit AND). Phrase: \"hello world\". Regex: /Catfooding/i. Hits group identical packed bodies: one snippet plus an occurrences array (archive, conversation_id, field).",
             json!({
                 "type": "object",
                 "properties": {
                     "pattern": {
                         "type": "string",
-                        "description": "PCRE2 (always). OR: lizard|catfooding. AND any order: (?=.*lizard)(?=.*the). Phrase: 'hello world' or -F / fixed_strings. Case insensitive: ignore_case. Whole word: word_regexp."
+                        "description": "Human query or /regex/flags. OR: lizard OR catfooding. AND: lizard AND the. Phrase: \"hello world\". Regex: /Catfooding/i. -F / fixed_strings is a literal. Case insensitive: ignore_case or /pattern/i. Whole word: word_regexp."
                     },
                     "ignore_case": {
                         "type": "boolean",

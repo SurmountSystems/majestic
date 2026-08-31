@@ -17,7 +17,9 @@ use crate::ingest::{infer_grok_export_scope, ingest_from_flags_with_config};
 use crate::list_memex_archives;
 use crate::scoped_archive_path;
 use crate::wire::{self, WireFormat};
-use crate::{SearchExec, SearchFlags, SearchOrigin, search_default_exec, search_with};
+use crate::{
+    SearchFlags, SearchOrigin, group_snippet_occurrences, search_default_with, search_query,
+};
 
 /// JSON-RPC 2.0 parse error.
 pub const PARSE_ERROR: i64 = -32700;
@@ -458,28 +460,18 @@ fn search_one_json(
 ) -> Result<Value, Error> {
     let hits = {
         let archive = Archive::open(path)?;
-        search_with(&archive, pattern, flags)?
+        search_query(&archive, pattern, flags)?
     };
     let unique = hits.len();
-    let hits = cap_hits(hits, max_count);
+    let groups = group_snippet_occurrences(hits.iter().map(|hit| (Some(path), hit)));
+    let groups = cap_hits(groups, max_count);
     tracing::info!(
         archive = %path.display(),
         unique,
-        printed = hits.len(),
+        printed = groups.len(),
         "search finished"
     );
-    let hits: Vec<Value> = hits
-        .into_iter()
-        .map(|hit| {
-            json!({
-                "archive": path,
-                "conversation_id": hit.conversation_id,
-                "field": hit.field,
-                "snippet": hit.snippet,
-            })
-        })
-        .collect();
-    Ok(json!({ "hits": hits }))
+    Ok(json!({ "hits": groups }))
 }
 
 fn search_all_json(
@@ -488,34 +480,34 @@ fn search_all_json(
     flags: SearchFlags,
     max_count: usize,
 ) -> Result<Value, Error> {
-    let groups = search_default_exec(home, pattern, SearchExec { flags, max_count })?;
-    let mut hits = Vec::new();
+    let groups = search_default_with(home, pattern, flags)?;
     let mut unique = 0usize;
     let mut duplicate_omitted = 0usize;
+    let mut labeled = Vec::new();
     for group in groups {
         unique = unique.saturating_add(group.hits.len());
         duplicate_omitted = duplicate_omitted.saturating_add(group.duplicate_omitted);
-        for hit in cap_hits(group.hits, max_count) {
-            let mut row = json!({
-                "conversation_id": hit.conversation_id,
-                "field": hit.field,
-                "snippet": hit.snippet,
-            });
-            match group.origin {
-                SearchOrigin::Archive => {
-                    row["archive"] = json!(group.path);
+        match group.origin {
+            SearchOrigin::Archive => {
+                for hit in group.hits {
+                    labeled.push((group.path.clone(), hit));
                 }
             }
-            hits.push(row);
         }
     }
+    let snippet_groups = group_snippet_occurrences(
+        labeled
+            .iter()
+            .map(|(path, hit)| (Some(path.as_path()), hit)),
+    );
+    let snippet_groups = cap_hits(snippet_groups, max_count);
     tracing::info!(
         unique,
-        printed = hits.len(),
+        printed = snippet_groups.len(),
         duplicate_omitted,
         "search finished"
     );
-    Ok(json!({ "hits": hits }))
+    Ok(json!({ "hits": snippet_groups }))
 }
 
 fn cap_hits<T>(mut hits: Vec<T>, max_count: usize) -> Vec<T> {

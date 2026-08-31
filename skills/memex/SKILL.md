@@ -29,11 +29,17 @@ Do not reimplement search or JSON ingest in a subagent.
    RSS is the pages the CPU has faulted, not the file size at `mmap()`. The
    intended page for text is 2 MiB. New ingest pads to that file offset. A
    systemwide search maps all listed archives, holds those maps, compiles
-   PCRE2 once, then runs PCRE2 on already-mapped text with
+   PCRE2 once, then runs PCRE2 on each packed span of already-mapped text with
    `min(file count, available parallelism)` workers. Search does not call
    `MADV_DONTNEED` after every archive during a live scan.
-   Hits are unique and grouped by archive, then conversation. Default print cap
-   is 100 unique hits per archive (`--max-count`). Uses PCRE2 always (same
+   Hits are unique (conversation id, field, entire packed span text). After
+   uniqueness, identical packed bodies print once. Each snippet group lists
+   every place that body appeared: archive path, conversation id, and field.
+   Two conversation ids or two archives with the same sentence are one snippet
+   and two occurrence rows. Two different bodies stay two snippet blocks.
+   One packed message is one hit even when PCRE2 matches it many times.
+   Duplicate packed copies of the same body in one conversation print once.
+   Default print cap is 100 snippet groups (`--max-count`). Uses PCRE2 always (same
    engine as `rg -P`). Does not spawn `rg`.
    `--service`+`--account` or an archive path searches one file only.
 2. **Ingest** with no paths scans `$HOME` for known export shapes (Grok dump,
@@ -81,7 +87,9 @@ memex ingest   # no args: scan $HOME for known export shapes
 memex search -i catfooding   # every archive under memex_dir (default $HOME/memex)
 memex search -F 'C.tfooding'
 memex search -w food
-memex search '(?=.*lizard)(?=.*the)'   # PCRE2 lookahead AND
+memex search 'lizard AND the'   # human AND: both words in the same title or message
+memex search '/Catfooding/i'
+memex search --format json 'lizard AND the'
 memex search --service agents/grok --account <xUsername> PATTERN
 memex ingest /path/to/dump
 memex ingest /path/to/ChatExport_synth/result.json
@@ -97,17 +105,18 @@ nix develop    # toolchain, just, cargo-nextest, pkg-config, sqlite, pcre2
 nix build      # result/bin/memex
 ```
 
-## Search patterns (PCRE2 always)
+## Search patterns
 
-Same engine as `rg -P`. Search uses mmap text, grep-searcher, and grep-pcre2 only. No rust-regex. No PCRE1. MCP/ACP have no pcre2 flag. Document patterns with this table. Do not write "case fold". Say case insensitive.
+Same engine as `rg -P` after compile. A pattern that is not slash-wrapped is a human query. `/regex/flags` is PCRE2. Search uses mmap text, grep-searcher, and grep-pcre2 only. PCRE2 runs on each packed span (one title or one message), not the whole archive blob. AND requires both words in that span. No rust-regex. No PCRE1. MCP/ACP have no pcre2 flag. Document patterns with this table. Do not write "case fold". Say case insensitive. Stdout is the report (`--format human|json|toon`). Status is tracing INFO on stderr.
 
 | Want | Pattern |
 | --- | --- |
-| OR | `lizard\|catfooding` |
-| AND, any order | `(?=.*lizard)(?=.*the)` |
-| Phrase | `'hello world'` or `-F 'hello world'` |
-| Case insensitive | `-i` |
+| OR | `lizard OR catfooding` or `lizard\|catfooding` |
+| AND, any order | `lizard AND the` |
+| Phrase | `"hello world"` or `-F 'hello world'` |
+| Case insensitive | `-i` or `/Catfooding/i` |
 | Whole word | `-w` |
+| Regex | `/<regex>/` flags: `i`, `g`, `m`, `s`, `x` |
 
 Needs system `pcre2` (libpcre2; pacman/nix). Optional local speed on this Ryzen:
 `RUSTFLAGS='-C target-cpu=native'`. Not in repo config (other CPUs). Nix
@@ -130,8 +139,9 @@ Host config: command `memex`, args `["mcp"]` (add `"--toon"` for TOON).
 
 Tools: `list_archives`, `search`, `stats`, `ingest`, `scoped_path`,
 `infer_grok_export`. Default `search` is all archives under `memex_dir`.
-Search is PCRE2 always (`ignore_case`, `fixed_strings`,
-`word_regexp`, optional `max_count`). Hits are unique and grouped. No pcre2
+Search compiles a human query or `/regex/flags` (`ignore_case`, `fixed_strings`,
+`word_regexp`, optional `max_count`). Hits are unique, then grouped by packed
+body into one snippet plus an `occurrences` array. No pcre2
 flag. It does not spawn `rg`.
 `ingest` infers service and account from input shape when those fields are omitted.
 Empty `inputs` scans `$HOME` for known export shapes.

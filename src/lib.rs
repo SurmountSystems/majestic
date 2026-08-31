@@ -25,24 +25,31 @@
 //! file size at `mmap()`. Patterns are PCRE2 (the same engine as `rg -P`).
 //! There is no PCRE1 and no rust-regex fallback. `-i` is case insensitive.
 //! `-w` is whole word. `-F` is a phrase or literal. `|` is OR. AND any order
-//! uses lookaheads.
+//! uses lookaheads on one packed span (one title or one message), not the
+//! whole archive blob.
 //!
 //! | Want | Pattern |
 //! | --- | --- |
-//! | OR | `lizard\|catfooding` |
-//! | AND, any order | `(?=.*lizard)(?=.*the)` |
-//! | Phrase | `'hello world'` or `-F 'hello world'` |
-//! | Case insensitive | `-i` |
+//! | OR | `lizard OR catfooding` or `lizard\|catfooding` or `/lizard\|catfooding/` |
+//! | AND, any order | `lizard AND the` or `(?=.*lizard)(?=.*the)` inside `/.../` |
+//! | Phrase | `"hello world"` or `-F 'hello world'` |
+//! | Case insensitive | `-i` or `/Catfooding/i` |
 //! | Whole word | `-w` |
+//! | Regex | `/<regex>/` flags: `i` case insensitive, `g` all matches (already unique by message), `m` multiline, `s` dotall, `x` extended |
 //!
-//! CLI equivalents:
+//! A pattern that is not slash-wrapped is a human query. Bare words join with
+//! implicit AND. AND requires both words in the same title or the same
+//! message. CLI equivalents:
 //!
 //! ```text
-//! memex search 'lizard|catfooding'
-//! memex search '(?=.*lizard)(?=.*the)'
+//! memex search 'lizard OR catfooding'
+//! memex search 'lizard AND the'
+//! memex search '"hello world"'
+//! memex search '/Catfooding/i'
 //! memex search -F 'hello world'
 //! memex search -i catfooding
 //! memex search -w food
+//! memex search --format json 'lizard AND the'
 //! ```
 
 use std::ffi::OsStr;
@@ -63,6 +70,7 @@ mod ingest_telegram;
 mod ingest_x;
 pub mod logging;
 pub mod mcp;
+pub mod query;
 pub mod rpc;
 pub mod schema;
 pub mod serve;
@@ -239,16 +247,20 @@ pub use ingest::{
     ingest, ingest_from_flags, ingest_from_flags_with_config, ingest_home, ingest_home_with_config,
     ingest_with_config, resolve_ingest_archive, resolve_ingest_archive_in,
 };
+pub use query::{CompiledQuery, QueryKind, compile_query, escape_pcre2};
 pub use rpc::{LOCAL_FUNCTION_METHODS, RpcContext, call_local};
 pub use schema::{
     AuthFile, BackendExport, BillingFile, Conversation, ConversationItem, ExtraMap, JsonAtom,
     Response, ResponseItem, Timestamp,
 };
 pub use trie::{
-    DEFAULT_SEARCH_MAX_COUNT, SearchExec, SearchFlags, SearchGroup, SearchHit, SearchOrigin,
-    search, search_all_archives, search_all_archives_with, search_default, search_default_exec,
-    search_default_with, search_with, write_default_search, write_search, write_search_all,
-    write_search_all_exec, write_search_all_with, write_search_exec, write_search_with,
+    DEFAULT_SEARCH_MAX_COUNT, SearchExec, SearchFlags, SearchFormat, SearchGroup, SearchHit,
+    SearchOccurrence, SearchOrigin, SearchSnippetGroup, SearchStatus, SearchStatusSink,
+    group_snippet_occurrences, search, search_all_archives, search_all_archives_with,
+    search_all_archives_with_status, search_default, search_default_exec,
+    search_default_exec_with_status, search_default_with, search_query, search_with,
+    write_default_search, write_search, write_search_all, write_search_all_exec,
+    write_search_all_with, write_search_exec, write_search_with,
 };
 pub use wire::{WireFormat, encode_rpc, parse_rpc_value};
 

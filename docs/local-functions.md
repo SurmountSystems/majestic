@@ -43,7 +43,7 @@ keys. Do not ingest `grok_oss.db`.
 | Plain name | What it does | CLI | MCP tool | ACP method | HTTP |
 |------------|--------------|-----|----------|------------|------|
 | List archives | Lists `*.majestic` under `memex_dir` (default `$HOME/memex`), plus leftover `*.archive` with no sibling `.majestic`. Does not list `.zst`. Skips README files. | none (MCP/ACP/HTTP only) | `list_archives` | `list_archives` | `tools/call` `list_archives` |
-| Search all archives | Systemwide: every archive under `memex_dir`. Maps all listed archives, holds those maps, compiles PCRE2 once, then runs PCRE2 on already-mapped text with `min(file count, available parallelism)` workers. Unique hits grouped by archive then conversation. Default print cap 100 unique per archive (`--max-count`). Unreadable files are skipped. Pattern is PCRE2 always. | `memex search PATTERN` (`-i` case insensitive, `-F` phrase or literal, `-w` whole word, `-m` unique print cap per archive) | `search` (omit service, account, archive; no pcre2 flag) | `search` | `tools/call` `search` |
+| Search all archives | Systemwide: every archive under `memex_dir`. Maps all listed archives, holds those maps, compiles PCRE2 once, then runs PCRE2 on each packed span of already-mapped text with `min(file count, available parallelism)` workers. AND requires both words in the same title or the same message. Unique hits, then identical packed bodies print once with an `occurrences` array (archive path, conversation id, field). Two conversation ids or two archives with the same sentence are one snippet and two occurrence rows. One packed message is one hit. Duplicate packed copies of the same body in one conversation print once. Default print cap 100 snippet groups (`--max-count`). Unreadable files are skipped. Pattern is PCRE2 always. | `memex search PATTERN` (`-i` case insensitive, `-F` phrase or literal, `-w` whole word, `-m` snippet-group print cap) | `search` (omit service, account, archive; no pcre2 flag) | `search` | `tools/call` `search` |
 | Search one archive | Searches one scoped file or an explicit archive path. | `memex search --service FOLDER --account NAME PATTERN` or `memex search PATTERN ARCHIVE` | `search` with `service`+`account` or `archive` | `search` | `tools/call` `search` |
 | Stats | Prints archive counts. No auth key values. Needs `--service`+`--account` or an archive path. | `memex stats --service FOLDER --account NAME` or `memex stats ARCHIVE` | `stats` | `stats` | `tools/call` `stats` |
 | Ingest | Streams Grok JSON, ChatGPT conversations zips/dirs, Facebook DYI zips/dirs, X account archives, Telegram `result.json`, session JSONL, markdown, Obsidian, agent reports, or session_docs sqlite into an archive. Empty inputs scan `$HOME` for known export shapes. | `memex ingest` or `memex ingest INPUTS...` (`-o` wins on explicit paths; `--service` / `--account` override explicit paths; omitted infers from shape) | `ingest` | `ingest` | `tools/call` `ingest` |
@@ -56,22 +56,23 @@ keys. Do not ingest `grok_oss.db`.
 
 ## Search patterns
 
-Search uses mmap text, grep-searcher, and grep-pcre2 only. Patterns are PCRE2. There is no PCRE1 and no rust-regex fallback. A `|` in the pattern is OR. AND any order uses lookaheads. `-i` / `ignore_case` is case insensitive. `-w` / `word_regexp` is whole word. `-F` / `fixed_strings` is a phrase or literal.
+Search uses mmap text, grep-searcher, and grep-pcre2 only. A pattern that is not slash-wrapped is a human query. `/regex/flags` is PCRE2. There is no PCRE1 and no rust-regex fallback. Human `OR` and `|` are OR. Human `AND` (bare words are implicit AND) compiles to lookaheads and matches only when both words sit in the same packed span (one title or one message). It does not mean both words appear anywhere in the archive. `-i` / `ignore_case` is case insensitive. `-w` / `word_regexp` is whole word. `-F` / `fixed_strings` is a phrase or literal.
 
 | Want | Pattern |
 | --- | --- |
-| OR | `lizard\|catfooding` |
-| AND, any order | `(?=.*lizard)(?=.*the)` |
-| Phrase | `'hello world'` or `-F 'hello world'` |
-| Case insensitive | `-i` |
+| OR | `lizard OR catfooding` or `lizard\|catfooding` |
+| AND, any order | `lizard AND the` |
+| Phrase | `"hello world"` or `-F 'hello world'` |
+| Case insensitive | `-i` or `/Catfooding/i` |
 | Whole word | `-w` |
+| Regex | `/<regex>/` flags: `i`, `g`, `m`, `s`, `x` |
 
 ## Parameters
 
 | Method | Arguments |
 |--------|-----------|
 | `list_archives` | none (uses `RpcContext.memex_dir`) |
-| `search` | `pattern` (required, PCRE2 always; see Search patterns below); `ignore_case` (bool, default false, `-i` case insensitive); `fixed_strings` (bool, default false, `-F` phrase or literal); `word_regexp` (bool, default false, `-w` whole word); `max_count` (non-negative integer, unique hits per archive, default 100, `0` means no cap); optional `service`, `account`, `archive`. No `pcre2` flag. |
+| `search` | `pattern` (required, human query or `/regex/flags`; see Search patterns below); `ignore_case` (bool, default false, `-i` case insensitive); `fixed_strings` (bool, default false, `-F` phrase or literal); `word_regexp` (bool, default false, `-w` whole word); `max_count` (non-negative integer, snippet groups printed, default 100, `0` means no cap); optional `service`, `account`, `archive`. Hits are `{ snippet, field, occurrences: [{ archive, conversation_id, field }] }`. CLI `--format json` / `toon` uses those objects. No `pcre2` flag. |
 | `stats` | `service`+`account`, or `archive` |
 | `ingest` | optional `inputs` (array of paths); optional `service`, `account`, `output`. Empty `inputs` scans `$HOME` (or `RpcContext.home`) for known export shapes. Inference: ChatGPT zip/dir, Meta DYI zip/dir (`social/meta`), X account archive (`social/x`), Grok dump, Telegram `result.json`, Obsidian, session_docs sqlite, `.agents/reports`, markdown. `-o` / `output` wins on explicit paths and is an error on a home scan. |
 | `scoped_path` | `service`, `account` |

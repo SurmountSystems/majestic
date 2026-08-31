@@ -42,6 +42,7 @@ fn missing_config_file_uses_defaults() {
     assert!(!cfg.search.fixed_strings);
     assert!(!cfg.search.word_regexp);
     assert_eq!(cfg.search.max_count, majestic::DEFAULT_SEARCH_MAX_COUNT);
+    assert_eq!(cfg.search.format, majestic::SearchFormat::Human);
     assert_eq!(cfg.serve.bind, DEFAULT_BIND.to_string());
     assert_eq!(cfg.compress.level, COMPRESS_LEVEL);
     assert_eq!(cfg.zip.max_uncompressed_bytes, 8 * 1024 * 1024 * 1024);

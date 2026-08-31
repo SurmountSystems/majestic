@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use crate::Error;
 use crate::ingest::HOME_SCAN_MAX_DEPTH;
 use crate::serve::DEFAULT_BIND;
+use crate::trie::SearchFormat;
 use crate::zip::MAX_UNCOMPRESSED;
 use crate::zstd_file::COMPRESS_LEVEL;
 
@@ -109,9 +110,12 @@ pub struct SearchConfig {
     /// One archive path. `None` means every archive under `memex_dir`.
     #[serde(default)]
     pub archive: Option<PathBuf>,
-    /// Unique hits printed per archive. `0` means no cap. Default 100.
+    /// Snippet groups printed. `0` means no cap. Default 100.
     #[serde(default = "default_search_max_count")]
     pub max_count: usize,
+    /// Search report encoding. Default `human`. Stdout is the report.
+    #[serde(default)]
+    pub format: SearchFormat,
 }
 
 /// Durable `memex ingest` paths. Empty `inputs` means home scan.
@@ -228,6 +232,8 @@ pub struct CliOverlay {
     pub search_archive: Option<PathBuf>,
     /// `search --max-count`.
     pub max_count: Option<usize>,
+    /// `search --format`.
+    pub search_format: Option<SearchFormat>,
     /// `stats` archive path.
     pub stats_archive: Option<PathBuf>,
     /// `serve --bind`.
@@ -332,6 +338,7 @@ impl Default for SearchConfig {
             word_regexp: false,
             archive: None,
             max_count: default_search_max_count(),
+            format: SearchFormat::Human,
         }
     }
 }
@@ -456,6 +463,9 @@ impl Config {
         }
         if let Some(value) = overlay.max_count {
             self.search.max_count = value;
+        }
+        if let Some(value) = overlay.search_format {
+            self.search.format = value;
         }
         if let Some(archive) = &overlay.stats_archive {
             self.stats.archive = Some(archive.clone());

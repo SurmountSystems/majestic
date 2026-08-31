@@ -162,6 +162,52 @@ mod tests {
     }
 
     #[test]
+    fn toon_roundtrip_search_snippet_with_occurrences() {
+        let obj = json!({
+            "hits": [{
+                "snippet": "same sentence",
+                "field": "message",
+                "occurrences": [
+                    {
+                        "archive": "agents/grok/a.majestic",
+                        "conversation_id": "convo-alpha",
+                        "field": "message"
+                    },
+                    {
+                        "archive": "agents/grok/a.majestic",
+                        "conversation_id": "convo-beta",
+                        "field": "message"
+                    }
+                ]
+            }]
+        });
+        let toon = encode_rpc(&obj, WireFormat::Toon).expect("encode TOON");
+        assert!(
+            !toon.trim_start().starts_with('{'),
+            "TOON encoding must not look like JSON, got {toon:?}"
+        );
+        let (back, format) = parse_rpc_value(&toon).expect("parse TOON");
+        assert_eq!(format, WireFormat::Toon);
+        assert_eq!(
+            back["hits"].as_array().map(Vec::len),
+            Some(1),
+            "TOON must round-trip one snippet group, got {back}"
+        );
+        let occurrences = back["hits"][0]["occurrences"]
+            .as_array()
+            .expect("occurrences array");
+        assert_eq!(
+            occurrences.len(),
+            2,
+            "TOON must round-trip two occurrence rows, got {back}"
+        );
+        assert_eq!(occurrences[0]["conversation_id"], "convo-alpha");
+        assert_eq!(occurrences[1]["conversation_id"], "convo-beta");
+        assert_eq!(back["hits"][0]["snippet"], "same sentence");
+        assert_eq!(back["hits"][0]["field"], "message");
+    }
+
+    #[test]
     fn content_type_text_toon_selects_toon() {
         assert_eq!(
             WireFormat::from_media_type("text/toon; charset=utf-8"),

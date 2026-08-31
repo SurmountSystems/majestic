@@ -31,6 +31,7 @@ ignore_case = false
 fixed_strings = false
 word_regexp = false
 max_count = 100
+format = "human"
 # archive = "~/memex/agents/grok/example.majestic"
 
 [ingest]

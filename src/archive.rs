@@ -255,7 +255,7 @@ impl fmt::Display for ArchiveStats {
 /// into a `Vec`. Resident size (RSS) is the pages the CPU has faulted, usually
 /// because PCRE2 read them. Mapping the file does not make RSS equal the file
 /// size. A systemwide search maps every listed archive and holds those maps
-/// while PCRE2 runs on the already-mapped text. Search does not call
+/// while PCRE2 runs on each packed span of the already-mapped text. Search does not call
 /// [`Self::release_pages`] after every archive while the user is still
 /// searching.
 pub struct Archive {

@@ -18,7 +18,7 @@ use majestic::rpc::RpcContext;
 use majestic::scoped_archive_path;
 use majestic::serve::{self, DEFAULT_BIND};
 use majestic::zstd_file;
-use majestic::{SearchExec, SearchFlags, write_search_all_exec, write_search_exec};
+use majestic::{SearchExec, SearchFlags, SearchFormat, write_search_all_exec, write_search_exec};
 
 /// Printed on `memex --help`.
 const AFTER_HELP: &str = "\
@@ -61,21 +61,36 @@ JSON and TOON
 
 /// Printed on `memex search -h` and `memex search --help`.
 const SEARCH_PATTERNS_HELP: &str = "\
-Search patterns (PCRE2)
+Search patterns
 
   Want               Pattern
-  OR                 lizard|catfooding
-  AND, any order     (?=.*lizard)(?=.*the)
-  Phrase             'hello world'  or  -F 'hello world'
-  Case insensitive   -i
+  OR                 lizard OR catfooding  or  lizard|catfooding
+  AND, any order     lizard AND the  (implicit AND of bare words)
+  Phrase             \"hello world\"  or  -F 'hello world'
+  Case insensitive   -i  or  /Catfooding/i
   Whole word         -w
+  Regex              /<regex>/   flags: i, g, m, s, x
 
-Search uses mmap text, grep-searcher, and grep-pcre2 only. There is no PCRE1
-and no rust-regex fallback. A `|` in the pattern is OR. AND any order uses
-lookaheads. `-i` is case insensitive. `-w` is whole word. `-F` is a phrase
-or literal string. Hits are unique and grouped by archive, then conversation.
-Default print cap is 100 unique hits per archive (`-m` / `--max-count`; `0`
-means no cap).
+A pattern that is not slash-wrapped is a human query. A single-quoted shell
+string is just that query. Bare words join with implicit AND (lookaheads, any
+order). AND requires both words in the same packed span (one title or one
+message). It does not mean both words appear anywhere in the archive. AND and
+OR are case-insensitive keywords. `|` is OR. Double quotes mark a contiguous
+phrase; metacharacters in bare words and phrases are escaped. Slash-wrapped
+`/pattern/flags` is PCRE2. `i` is case insensitive.
+`g` means all matches (search already unique-hits by message). `m` multiline,
+`s` dotall, `x` extended. Other flag letters are an error. `-F` keeps the
+pattern as a literal, including slashes. `-i` / `-w` still apply when they
+do not conflict.
+
+Stdout is the report (`--format human` default, or `json`, or `toon`). Status
+is tracing INFO on stderr (searching N archives, then searching k/N path
+with a running unique-hit count). Search uses mmap text, grep-searcher, and
+grep-pcre2 only. There is no PCRE1 and no rust-regex fallback. Hits are
+unique (conversation id, field, entire packed span text). After uniqueness,
+identical packed bodies print once, then occurrence rows list archive path,
+conversation id, and field. Default print cap is 100 snippet groups
+(`-m` / `--max-count`; `0` means no cap).
 ";
 
 #[derive(Parser)]
@@ -115,7 +130,7 @@ enum Command {
         inputs: Vec<PathBuf>,
     },
     /// Search mmap archives under `$HOME/memex`. No scope flags means every archive.
-    /// Case sensitive unless `-i` (case insensitive). Default pattern is PCRE2 (same as `rg -P`).
+    /// Case sensitive unless `-i` (case insensitive). Human query unless `/regex/flags`.
     #[command(after_help = SEARCH_PATTERNS_HELP, after_long_help = SEARCH_PATTERNS_HELP)]
     Search {
         /// Case insensitive (Unicode). File key `search.ignore_case`. The flag overrides the file.
@@ -127,10 +142,13 @@ enum Command {
         /// Whole word.
         #[arg(short = 'w', long)]
         word_regexp: bool,
-        /// Unique hits printed per archive. File key `search.max_count`. Default 100. `0` means no cap.
+        /// Snippet groups printed. File key `search.max_count`. Default 100. `0` means no cap.
         #[arg(short = 'm', long, value_name = "N")]
         max_count: Option<usize>,
-        /// PCRE2 pattern (always; same as `rg -P`). `-F` treats it as a phrase or literal.
+        /// Report encoding on stdout. File key `search.format`. Default human. json and toon use the same hit objects as MCP. Status stays on stderr.
+        #[arg(long, value_name = "human|json|toon", value_parser = parse_format_arg)]
+        format: Option<SearchFormat>,
+        /// Human query, or `/regex/flags`. `-F` treats it as a phrase or literal.
         pattern: String,
         #[command(flatten)]
         scope: Scope,
@@ -234,6 +252,10 @@ fn is_cli(matches: &clap::ArgMatches, id: &str) -> bool {
     matches.value_source(id) == Some(clap::parser::ValueSource::CommandLine)
 }
 
+fn parse_format_arg(value: &str) -> Result<SearchFormat, String> {
+    SearchFormat::parse_name(value).map_err(|error| error.to_string())
+}
+
 fn fill_scope_overlay(overlay: &mut CliOverlay, scope: &Scope, matches: &clap::ArgMatches) {
     if is_cli(matches, "service") {
         overlay.service = scope.service.clone();
@@ -269,6 +291,7 @@ fn cli_overlay_from(cli: &Cli, matches: &clap::ArgMatches) -> CliOverlay {
             fixed_strings,
             word_regexp,
             max_count,
+            format,
             scope,
             archive,
             ..
@@ -286,6 +309,9 @@ fn cli_overlay_from(cli: &Cli, matches: &clap::ArgMatches) -> CliOverlay {
                 }
                 if is_cli(sub, "max_count") {
                     overlay.max_count = *max_count;
+                }
+                if is_cli(sub, "format") {
+                    overlay.search_format = *format;
                 }
                 if is_cli(sub, "archive") {
                     overlay.search_archive = archive.clone();
@@ -372,6 +398,7 @@ fn run(cli: Cli, config: Config) -> Result<(), Error> {
                     word_regexp: config.search.word_regexp,
                 },
                 max_count: config.search.max_count,
+                format: config.search.format,
             };
             match search_archives_from_flags(
                 config.search.archive.clone(),
@@ -659,15 +686,37 @@ mod cli_stdio_tests {
                 fixed_strings,
                 word_regexp,
                 pattern,
+                format,
                 ..
             } => {
                 assert!(ignore_case);
                 assert!(fixed_strings);
                 assert!(word_regexp);
                 assert_eq!(pattern, "food");
+                assert_eq!(format, None);
             }
             _ => panic!("expected memex search"),
         }
+    }
+
+    #[test]
+    fn cli_search_format_json() {
+        use super::SearchFormat;
+        let cli = Cli::try_parse_from(["memex", "search", "--format", "json", "food"])
+            .expect("memex search --format json");
+        match cli.command {
+            Command::Search {
+                format, pattern, ..
+            } => {
+                assert_eq!(format, Some(SearchFormat::Json));
+                assert_eq!(pattern, "food");
+            }
+            _ => panic!("expected memex search"),
+        }
+        assert!(
+            Cli::try_parse_from(["memex", "search", "--format", "xml", "food"]).is_err(),
+            "unknown --format must fail"
+        );
     }
 
     #[test]

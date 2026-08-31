@@ -25,8 +25,9 @@ place.
 2. Data is scoped to each service and account. Multiple imports of the same
    account can accumulate. Matching bytes keep one stored body.
 3. Archives use rkyv mapped into memory and reads that do not copy the mapped
-   bytes. Search uses PCRE2 (the same engine as `rg -P`) on that mapped UTF-8
-   text blob. Open maps the `.majestic` file with `PROT_READ` and `MAP_SHARED`.
+   bytes. Search uses PCRE2 (the same engine as `rg -P`) on each packed span
+   of that mapped UTF-8 text blob (one title or one message). Open maps the
+   `.majestic` file with `PROT_READ` and `MAP_SHARED`.
    That is a virtual mapping of the file, not a heap allocation of the file
    size. Search reads that map. It does not copy the text blob into a `Vec`.
    RSS is the pages the CPU has faulted, usually because PCRE2 read them.
@@ -40,11 +41,17 @@ place.
    errors are DEBUG; `Archive::open` still succeeds. Do not copy onto
    hugetlbfs. Do not `MAP_HUGETLB` on the file descriptor. A systemwide search
    lists paths, maps all listed archives and holds those maps, compiles PCRE2
-   once, then runs PCRE2 on already-mapped text with
+   once, then runs PCRE2 on each packed span of already-mapped text with
    `min(file count, available parallelism)` workers. Search does not ask the
    kernel to drop pages (`MADV_DONTNEED`) after every archive while the search
-   is still running. Hits are unique (same archive, conversation id, field, and
-   snippet print once) and grouped by archive path, then conversation id.
+   is still running. Hits are unique (same archive, conversation id, field, and entire
+   packed span text print once). Many PCRE2 matches in one message are one hit.
+   Duplicate packed copies of the same body stay one hit. The unique key is not
+   the snippet window and is not the packed start offset. After uniqueness,
+   identical packed bodies print once. Each snippet group lists every place
+   that body appeared: archive path, conversation id, and field. Two
+   conversation ids or two archives with the same sentence are one snippet and
+   two occurrence rows. Two different bodies stay two snippet blocks.
 
 ## Layout
 
@@ -128,7 +135,8 @@ path that is not machine-specific.
 | `search.ignore_case` | `false` | Case insensitive (`-i`). |
 | `search.fixed_strings` | `false` | Phrase or literal (`-F`). |
 | `search.word_regexp` | `false` | Whole word (`-w`). |
-| `search.max_count` | `100` | Unique hits printed per archive (`-m` / `--max-count`). `0` means no cap. |
+| `search.max_count` | `100` | Snippet groups printed (`-m` / `--max-count`). `0` means no cap. |
+| `search.format` | `human` | Search report on stdout (`human`, `json`, or `toon`). Status stays on stderr. |
 | `search.archive` | unset | One archive path. Unset means every archive under the data directory. |
 | `ingest.output` | unset | Output archive (`-o`). Unset means infer or home scan. |
 | `ingest.inputs` | `[]` | Input dumps. Empty means scan `$HOME`. |
@@ -240,38 +248,54 @@ Session JSONL still needs `--service` and `--account`, or `-o`.
 searches every `*.majestic` under `$HOME/memex`, plus older `*.archive` files
 when there is no sibling `.majestic` with the same stem. A systemwide search
 lists paths, maps all listed archives and holds those maps, compiles PCRE2
-once, then runs PCRE2 on already-mapped text with
+once, then runs PCRE2 on each packed span of already-mapped text with
 `min(file count, available parallelism)` workers. It does not walk `$HOME`
 for live export dumps. Ingest owns discovery (`memex ingest` with no paths). It does not map
 `.zst` files into memory. Search uses PCRE2 always (`grep-searcher` /
-`grep-pcre2`, same engine as `rg -P`). AND any order uses PCRE2 lookaheads.
-Search does not use rust-regex. It does not spawn `rg`. Hits are unique and
-grouped: archive path under `memex/`, then conversation id, then unique
-messages. Default print cap is 100 unique hits per archive (`--max-count`,
-`search.max_count`; `0` means no cap).
+`grep-pcre2`, same engine as `rg -P`). AND any order uses PCRE2 lookaheads
+on one packed span (one title or one message). Both words must appear in
+that span. It is not enough for them to appear anywhere in the archive.
+Search does not use rust-regex. It does not spawn `rg`. Hits are unique
+(conversation id, field, and the entire packed span text). After uniqueness,
+identical packed bodies print once, then occurrence rows list archive path,
+conversation id, and field. Two conversation ids or two archives with the same
+sentence are one snippet and two occurrence rows. Two different bodies stay two
+snippet blocks. MCP, ACP, HTTP, and TOON use the same `occurrences` array.
+Many PCRE2 matches in one packed message print once. Duplicate packed
+copies of the same body in one conversation print once. Default print
+cap is 100 snippet groups (`--max-count`, `search.max_count`;
+`0` means no cap).
 
 `--service` and `--account` together, or an explicit archive path, search one
 file and do not scan home. Search matches letter case unless you pass `-i`,
-which is case insensitive (Unicode). Default pattern is PCRE2. `-F` /
-`--fixed-strings` is a phrase or literal string. `-w` / `--word-regexp` is
-whole word. Without `-w`, a match may sit inside a stored word.
+which is case insensitive (Unicode). A pattern that is not slash-wrapped is
+a human query. `/regex/flags` is PCRE2. `-F` / `--fixed-strings` is a phrase
+or literal string. `-w` / `--word-regexp` is whole word. Without `-w`, a match
+may sit inside a stored word.
 
-Patterns are PCRE2. Search uses mmap text, grep-searcher, and grep-pcre2 only.
-There is no PCRE1 and no rust-regex fallback. A `|` in the pattern is OR. AND
-any order uses lookaheads.
+A pattern that is not slash-wrapped is a human query. Slash-wrapped
+`/regex/flags` is PCRE2. Search uses mmap text, grep-searcher, and grep-pcre2
+only. There is no PCRE1 and no rust-regex fallback. Human `OR` and `|` are OR.
+Human `AND` (and implicit AND of bare words) compiles to lookaheads and
+matches only when both words sit in the same title or the same message.
+Double quotes mark a contiguous phrase. `--format human` (default), `json`,
+or `toon` writes the report on stdout. Status (searching N archives, then
+searching k/N path and a running unique-hit count) goes to stderr.
 
 | Want | Pattern |
 | --- | --- |
-| OR `\|` | `lizard\|catfooding` |
-| AND any order lookaheads | `(?=.*lizard)(?=.*the)` |
-| Phrase `'hello world'` or `-F` | `'hello world'` or `-F 'hello world'` |
-| Case insensitive `-i` | `-i` |
-| Whole word `-w` | `-w` |
+| OR | `lizard OR catfooding` or `lizard\|catfooding` |
+| AND any order | `lizard AND the` |
+| Phrase | `"hello world"` or `-F 'hello world'` |
+| Case insensitive | `-i` or `/Catfooding/i` |
+| Whole word | `-w` |
+| Regex | `/<regex>/` flags: `i`, `g` (all matches; already unique by message), `m`, `s`, `x` |
+| PCRE2 AND | `/(?=.*lizard)(?=.*the)/` |
 
-MCP and ACP search always uses PCRE2. There is no pcre2 flag on those surfaces.
-Search needs the system `pcre2` library (libpcre2). `memex search --help`
-prints the same table. Manual pages: `man memex` after `just man`, or
-`man -l man/memex.1` from this crate.
+MCP and ACP search compile the same human or slash-wrapped query. There is no
+pcre2 flag on those surfaces. Search needs the system `pcre2` library
+(libpcre2). `memex search --help` prints the same table. Manual pages: `man
+memex` after `just man`, or `man -l man/memex.1` from this crate.
 
 ```bash
 just install
@@ -279,7 +303,11 @@ memex search PATTERN
 memex search -i catfooding
 memex search -F 'C.tfooding'
 memex search -w food
-memex search '(?=.*lizard)(?=.*the)'
+memex search 'lizard AND the'
+memex search 'lizard OR catfooding'
+memex search '"hello world"'
+memex search '/Catfooding/i'
+memex search --format json 'lizard AND the'
 memex search --service agents/grok --account <xUsername> PATTERN
 ```
 

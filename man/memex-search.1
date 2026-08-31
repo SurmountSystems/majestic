@@ -7,6 +7,7 @@ memex-search \- search memex archives with PCRE2 patterns
 .RI [ -w ]
 .RI [ -F ]
 .RI [ -m " N]"
+.RI [ --format " FMT]"
 .I PATTERN
 .RI [ ARCHIVE ]
 .PP
@@ -15,6 +16,7 @@ memex-search \- search memex archives with PCRE2 patterns
 .RI [ -w ]
 .RI [ -F ]
 .RI [ -m " N]"
+.RI [ --format " FMT]"
 .B --service
 .I FOLDER
 .B --account
@@ -48,12 +50,18 @@ Search reads that map. It does not copy the text blob into a
 RSS is the pages the CPU has faulted, not the file size at mmap. The intended
 page for text is 2 MiB. New ingest pads so text starts at a 2 MiB file offset.
 A systemwide search maps all listed archives, holds those maps, compiles PCRE2
-once, then runs PCRE2 on already-mapped text with min(file count, available
-parallelism) workers. Search does not call
+once, then runs PCRE2 on each packed span of already-mapped text with min(file
+count, available parallelism) workers. AND requires both words in the same
+title or the same message, not anywhere in the archive. Search does not call
 .B MADV_DONTNEED
-after every archive while the search is still running. Hits are unique and
-grouped by archive path, then conversation id. Default print cap is 100 unique
-hits per archive.
+after every archive while the search is still running. Hits are unique
+(conversation id, field, and the entire packed span text). After uniqueness,
+identical packed bodies print once, then occurrence rows list archive path,
+conversation id, and field. Two conversation ids or two archives with the
+same sentence are one snippet and two occurrence rows. Two different bodies
+stay two snippet blocks. One packed message is one hit even when PCRE2
+matches it many times. Duplicate packed copies of the same body in one
+conversation print once. Default print cap is 100 snippet groups.
 It does not walk
 .B $HOME
 for live export dumps. Ingest owns discovery. It does not mmap
@@ -61,10 +69,15 @@ for live export dumps. Ingest owns discovery. It does not mmap
 It does not spawn
 .BR rg .
 .PP
-Search uses mmap text, grep-searcher, and grep-pcre2 only. Patterns are PCRE2
-(the same engine as
+Search uses mmap text, grep-searcher, and grep-pcre2 only. A pattern that is
+not slash-wrapped is a human query. Slash-wrapped
+.B /regex/flags
+is PCRE2 (the same engine as
 .BR "rg -P" ).
-There is no PCRE1 and no rust-regex fallback.
+There is no PCRE1 and no rust-regex fallback. After mapping, search logs
+.B searching N archives
+on stderr, then one compact line per worker completion. It clones the PCRE2
+matcher per worker so match-data is not shared.
 .PP
 .B --service
 and
@@ -79,8 +92,9 @@ under
 .IR fixed_strings ,
 .IR word_regexp ,
 .IR max_count ,
+.IR format ,
 .IR archive ).
-A missing file uses crate defaults (flags false, max_count 100, archive unset). CLI flags
+A missing file uses crate defaults (flags false, max_count 100, format human, archive unset). CLI flags
 override the file.
 .SH OPTIONS
 .TP
@@ -96,7 +110,17 @@ a match may sit inside a stored word.
 Phrase or literal string.
 .TP
 .BR -m " N" ", " --max-count " N"
-Unique hits printed per archive. Default 100. 0 means no cap.
+Unique messages printed per archive. Default 100. 0 means no cap.
+.TP
+.BI --format " human|json|toon"
+Stdout report encoding. Default
+.BR human
+(grouped snippets and occurrence rows).
+.B json
+and
+.B toon
+use the same hit objects as MCP (a hits array of snippet groups and occurrences).
+Status (searching N archives, then searching k/N path and a running unique-hit count) goes to stderr. Do not print one line per match.
 .TP
 .BI --service " FOLDER"
 Folder under
@@ -109,29 +133,44 @@ Username file stem.
 .SH SEARCH PATTERNS
 .nf
 Want                 Pattern
-OR                   lizard|catfooding
-AND, any order       (?=.*lizard)(?=.*the)
-Phrase               'hello world'  or  -F 'hello world'
-Case insensitive     -i
+OR                   lizard OR catfooding  or  lizard|catfooding
+AND, any order       lizard AND the
+                     (bare words are implicit AND)
+Phrase               "hello world"  or  -F 'hello world'
+Case insensitive     -i  or  /Catfooding/i
 Whole word           -w
+Regex                /<regex>/  flags: i, g, m, s, x
+PCRE2 AND            /(?=.*lizard)(?=.*the)/
 .fi
 .PP
-A
+A pattern that is not slash-wrapped is a human query. A single-quoted shell
+string is just that query. Bare words join with implicit AND (lookaheads, any
+order). AND requires both words in the same packed span (one title or one
+message). It does not mean both words appear anywhere in the archive. AND and
+OR are case-insensitive keywords.
 .B |
-in the pattern is OR. AND any order uses lookaheads.
+is OR. Double quotes mark a contiguous phrase. Metacharacters in bare words
+and phrases are escaped.
 .B -i
 is case insensitive.
 .B -w
 is whole word.
 .B -F
-is a phrase or literal.
+is a phrase or literal and skips human and slash compile.
+.B /pattern/i
+is PCRE2 with case insensitive.
+.B g
+means all matches; search already unique-hits by message.
 .SH EXAMPLES
 .nf
-memex search 'lizard|catfooding'
-memex search '(?=.*lizard)(?=.*the)'
+memex search 'lizard OR catfooding'
+memex search 'lizard AND the'
+memex search '"hello world"'
+memex search '/Catfooding/i'
 memex search -F 'hello world'
 memex search -i catfooding
 memex search -w food
+memex search --format json 'lizard AND the'
 memex search --service agents/grok --account personal PATTERN
 .fi
 .SH SEE ALSO

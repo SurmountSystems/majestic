@@ -76,7 +76,9 @@ not ingest `~/.grok/grok_oss.db` (usage tables, not chats). `memex search PATTER
 `$HOME/memex`, plus leftover `*.archive` when there is no sibling
 same-stem `.majestic`. It does not walk `$HOME` for live export dumps. Ingest
 owns discovery. Search uses PCRE2 (grep-pcre2, same engine as
-`rg -P`) on the mmap UTF-8 text blob. It does not copy that blob into a `Vec`.
+`rg -P`) on each packed span of the mmap UTF-8 text blob (one title or one
+message). It does not copy that blob into a `Vec`. It does not treat the
+whole blob as one haystack for lookahead AND.
 Open **memory-maps** each `.majestic` file with `PROT_READ` and `MAP_SHARED`.
 That is a virtual mapping of the file, not a heap allocation of the file size.
 Virtual size can be tens of gigabytes for one person (C1). **Resident** size
@@ -94,15 +96,27 @@ transparent huge pages in always mode (this host: Linux 7,
 errors are DEBUG; `Archive::open` still succeeds. Do not copy onto hugetlbfs.
 Do not `MAP_HUGETLB` on the file descriptor. A systemwide search lists paths,
 maps all listed archives and holds those maps, compiles PCRE2 once, then runs
-PCRE2 on already-mapped `archive.text()` with
+PCRE2 on each packed span of already-mapped `archive.text()` with
 `min(file count, available parallelism)` workers. That is parallelism on
-mapped slices. Concurrency may overlap the next mmap with a scan that has
-already started. Do not `par_iter` the whole path list as the architecture
-(open and search each path as a job). There is no four-map cap. Hits are
-unique (same archive, conversation id, field, and snippet print once) and
-grouped by archive path, then conversation id. Default print cap is 100 unique
-hits per archive (`search.max_count`, `--max-count`; `0` means no cap). It does
-not spawn `rg`. `--service` and `--account`
+mapped slices (one worker per archive). Each worker clones the PCRE2 matcher so match-data is not
+shared. A hit is one title or one message. AND means both terms appear in
+that span, not later in the same archive blob. After mapping, search logs searching N archives, then one compact
+line per worker completion (searching k/N path and a running unique-hit
+count). Status is tracing INFO on stderr. `--format human` (default), `json`,
+or `toon` writes the report on stdout. A pattern that is not slash-wrapped
+is a human query. `/regex/flags` is PCRE2. Concurrency may overlap the next
+mmap with a scan that has already started. Do not `par_iter` the whole path
+list as the architecture (open and search each path as a job). There is no
+four-map cap. Hits are
+unique (same archive, conversation id, field, and entire packed span text print
+once). Many PCRE2 matches in one message are one hit. Duplicate packed copies of
+the same body stay one hit. The unique key is not the snippet window and is not
+the packed start offset. After uniqueness, identical packed bodies print once.
+Each snippet group lists every place that body appeared: archive path,
+conversation id, and field. Two conversation ids or two archives with the same
+sentence are one snippet and two occurrence rows. Two different bodies stay two
+snippet blocks. Default print cap is 100 snippet groups (`search.max_count`,
+`--max-count`; `0` means no cap). It does not spawn `rg`. `--service` and `--account`
 together, or an explicit archive path, still search one file and do not scan home.
 Stats still need those flags or an
 explicit archive path. There is no silent default of `~/memex/archive.majestic`.
@@ -140,18 +154,28 @@ Do not add heed, lmdb, candle, or embedding crates. rusqlite is allowed only as
 a read-only ingest reader for grok-oss `session_docs` (never `grok_oss.db`). The
 mmap `.majestic` file is the store (leftover `.archive` is still readable). Do not use sqlite as the memex
 store. Tries (FST maps) are still packed at ingest. Search runs PCRE2
-(`grep-searcher` / `grep-pcre2` / `grep-matcher`, same engine as `rg -P`) on the
-mmap UTF-8 text blob. It does not copy that blob into a `Vec`. Open maps the
+(`grep-searcher` / `grep-pcre2` / `grep-matcher`, same engine as `rg -P`) on
+each packed span of the mmap UTF-8 text blob. It does not copy that blob into
+a `Vec`. Open maps the
 `.majestic` file with `PROT_READ` and `MAP_SHARED`. Search reads that map. RSS
 is the pages the CPU has faulted, not the file size at `mmap()`. The intended
 page for text is 2 MiB. New ingest pads to that file offset. A systemwide
 search maps all listed archives, holds those maps, compiles PCRE2 once, then
-runs PCRE2 on already-mapped text with `min(file count, available parallelism)`
-workers. Search does not call `MADV_DONTNEED` after every archive during a live
-scan. Hits are unique and grouped by archive, then conversation. AND any
-order uses PCRE2 lookaheads. Search does not use
-rust-regex or PCRE1. It does not query those FST maps. It does not spawn the
-`rg` binary. It is not a database and not a vector index.
+runs PCRE2 on each packed span of already-mapped text with `min(file count, available parallelism)`
+workers. Each worker clones the PCRE2 matcher so match-data is not shared.
+Search does not call `MADV_DONTNEED` after every archive during a live
+scan. Hits are unique, then grouped by packed body into one snippet plus
+occurrence rows (archive path, conversation id, field). A pattern that is
+not slash-wrapped is a human query (`lizard AND the`, `lizard OR catfooding`,
+`"hello world"`; bare words are implicit AND). `/regex/flags` is PCRE2 (`i`
+case insensitive, `g` all matches already unique by message, `m` multiline,
+`s` dotall, `x` extended). AND any order uses PCRE2 lookaheads on one title
+or one message, not the whole archive. `--format
+human` (default), `json`, or `toon` writes the report on stdout. Status
+(searching N archives, then searching k/N path and a running unique-hit
+count) goes to stderr. Search does not use rust-regex or PCRE1. It does not
+query those FST maps. It does not spawn the `rg` binary. It is not a
+database and not a vector index.
 
 Prose in this crate follows [Concise American Technical English](https://github.com/SurmountSystems/specs/blob/main/0005_CATE.md) (accessed: 2026-08-27). Write complete American English thoughts. Do not use half labels as sentences. Residual is written in full. Leftover unstack (deleting a hyphen from a legal-caption compound and leaving the two words) is nonconforming; rephrase into ordinary English.
 
@@ -217,7 +241,7 @@ Override the terminal with `MEMEX_LOG` or `RUST_LOG`. If those are unset, `[log]
 
 Agents MUST document memex search patterns with this table. Do not write "case fold", "caseless", or "caseful". Say **case insensitive**.
 
-Search uses mmap text, grep-searcher, and grep-pcre2 only. Patterns are PCRE2. There is no PCRE1 and no rust-regex fallback. `-i` is case insensitive. `-w` is whole word. `-F` is a phrase or literal. `|` is OR. AND any order uses lookaheads.
+Search uses mmap text, grep-searcher, and grep-pcre2 only. Patterns are PCRE2. There is no PCRE1 and no rust-regex fallback. `-i` is case insensitive. `-w` is whole word. `-F` is a phrase or literal. `|` is OR. AND any order uses lookaheads on one packed span (one title or one message). AND is both words in that span, not anywhere in the archive.
 
 | Want | Pattern |
 | --- | --- |
@@ -239,9 +263,9 @@ Red then green is still the contract: write the failing test for the named behav
 
 1. Schema and scaffold: crate, known types, leftover map, synthetic lossless tests.
 2. Ingest and archive: stream export JSON, write `.majestic`, mmap open with rkyv bytecheck.
-3. Search CLI: PCRE2 always (`grep-pcre2`, same engine as `rg -P`) on the mmap UTF-8 text blob. Case sensitive unless `-i` (case insensitive, Unicode). Default pattern is PCRE2. Document patterns with the Search patterns table in this file (OR `lizard|catfooding`, AND any order `(?=.*lizard)(?=.*the)`, phrase `'hello world'` or `-F 'hello world'`, case insensitive `-i`, whole word `-w`). No `--rust-regex`. MCP/ACP have no pcre2 flag. Do not spawn `rg`. Ingest reads grok-oss `chat_history.jsonl` as chat turns. Other session `*.jsonl` stays leftover JSON on the export. Markdown files, Obsidian notes (skip `.obsidian/`), agent reports, and `session_docs` sqlite rows become the same conversation records. Unknown keys and YAML frontmatter stay in leftover maps.
+3. Search CLI: PCRE2 (`grep-pcre2`, same engine as `rg -P`) on each packed span of the mmap UTF-8 text blob after query compile. Case sensitive unless `-i` (case insensitive, Unicode). A pattern that is not slash-wrapped is a human query. `/regex/flags` is PCRE2. Document patterns with the Search patterns table in this file (OR `lizard OR catfooding`, AND any order `lizard AND the` in the same title or the same message, phrase `"hello world"` or `-F 'hello world'`, case insensitive `-i` or `/Catfooding/i`, whole word `-w`). No `--rust-regex`. MCP/ACP have no pcre2 flag. Do not spawn `rg`. Ingest reads grok-oss `chat_history.jsonl` as chat turns. Other session `*.jsonl` stays leftover JSON on the export. Markdown files, Obsidian notes (skip `.obsidian/`), agent reports, and `session_docs` sqlite rows become the same conversation records. Unknown keys and YAML frontmatter stay in leftover maps.
 
-`memex search PATTERN` (no `--service`, no `--account`, no archive path) is case-sensitive and is a systemwide search: every `*.majestic` under `$HOME/memex`, plus leftover `*.archive` when there is no sibling same-stem `.majestic`. A systemwide search lists paths, maps all listed archives and holds those maps, compiles PCRE2 once, then runs PCRE2 on already-mapped text with `min(file count, available parallelism)` workers. It does not walk `$HOME` for live export dumps. Ingest owns discovery. It does not mmap `.zst`. Hits are unique and grouped: archive path under `memex/`, then conversation id, then unique messages. Default print cap is 100 unique hits per archive (`--max-count`). `memex search --service agents/grok --account <xUsername> PATTERN` reads only `$HOME/memex/agents/grok/<xUsername>.majestic`. An explicit archive path also searches one file. Scoped search does not also scan home. Search and stats do not infer from an export dir. Stats still error if both scoped flags and an archive path are omitted. `memex search -i PATTERN` is case insensitive (Unicode). Default pattern is PCRE2. `-F` is a phrase or literal. `-w` is whole word. Without `-w`, a match may sit inside a stored word. AND any order is `(?=.*lizard)(?=.*the)`. It does not spawn `rg`. Unreadable or corrupt archives are skipped with a warning; no archives prints that no archives were found.
+`memex search PATTERN` (no `--service`, no `--account`, no archive path) is case-sensitive and is a systemwide search: every `*.majestic` under `$HOME/memex`, plus leftover `*.archive` when there is no sibling same-stem `.majestic`. A systemwide search lists paths, maps all listed archives and holds those maps, compiles PCRE2 once, clones the matcher per worker, then runs PCRE2 on each packed span of already-mapped text with `min(file count, available parallelism)` workers. Status on stderr is `searching N archives` then `searching k/N path` and a running unique-hit count. `--format human` (default), `json`, or `toon` writes the report on stdout. It does not walk `$HOME` for live export dumps. Ingest owns discovery. It does not mmap `.zst`. Hits are unique (conversation id, field, and the entire packed span text, not the snippet window and not the packed start offset). After uniqueness, identical packed bodies print once. Each snippet group lists every place that body appeared: archive path, conversation id, and field. Two conversation ids or two archives with the same sentence are one snippet and two occurrence rows. Two different bodies stay two snippet blocks. Many PCRE2 matches in one packed message print once. Default print cap is 100 snippet groups (`--max-count`). `memex search --service agents/grok --account <xUsername> PATTERN` reads only `$HOME/memex/agents/grok/<xUsername>.majestic`. An explicit archive path also searches one file. Scoped search does not also scan home. Search and stats do not infer from an export dir. Stats still error if both scoped flags and an archive path are omitted. `memex search -i PATTERN` is case insensitive (Unicode). A pattern that is not slash-wrapped is a human query. `/regex/flags` is PCRE2. `-F` is a phrase or literal. `-w` is whole word. Without `-w`, a match may sit inside a stored word. AND any order is `lizard AND the`, and both words must sit in the same title or the same message. It does not spawn `rg`. Unreadable or corrupt archives are skipped with a warning; no archives prints that no archives were found.
 
 Do not `git add`, `git commit`, or `git init` unless the operator explicitly asks. Do not publish to crates.io unless the operator asks.
 

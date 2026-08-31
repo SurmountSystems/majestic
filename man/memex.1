@@ -26,7 +26,8 @@ of concept. It is not that numbered specification.
 Search uses mmap text, grep-searcher, and grep-pcre2 only. Patterns are PCRE2
 (the same engine as
 .BR "rg -P" ).
-There is no PCRE1 and no rust-regex fallback.
+There is no PCRE1 and no rust-regex fallback. AND requires both words in the
+same packed span (one title or one message), not anywhere in the archive.
 .SH COMMANDS
 .TP
 .B ingest
@@ -193,6 +194,8 @@ Keys:
 .BR search.ignore_case ,
 .BR search.fixed_strings ,
 .BR search.word_regexp ,
+.BR search.max_count ,
+.BR search.format ,
 .BR search.archive ,
 .BR ingest.output ,
 .BR ingest.inputs ,
@@ -217,7 +220,9 @@ Keys:
 Path-valued keys expand a leading
 .BR ~ .
 .SH SEARCH PATTERNS
-Patterns are PCRE2.
+A pattern that is not slash-wrapped is a human query.
+.B /regex/flags
+is PCRE2.
 .B -i
 is case insensitive.
 .B -w
@@ -225,22 +230,28 @@ is whole word.
 .B -F
 is a phrase or literal.
 .B |
-is OR. AND any order uses lookaheads.
+and OR are OR. AND any order uses lookaheads on one packed span (one title or
+one message). Bare words join with implicit AND. AND is both words in that
+span, not anywhere in the archive.
 .PP
 .nf
 Want                 Pattern
-OR                   lizard|catfooding
-AND, any order       (?=.*lizard)(?=.*the)
-Phrase               'hello world'  or  -F 'hello world'
-Case insensitive     -i
+OR                   lizard OR catfooding  or  lizard|catfooding
+AND, any order       lizard AND the
+Phrase               "hello world"  or  -F 'hello world'
+Case insensitive     -i  or  /Catfooding/i
 Whole word           -w
+Regex                /<regex>/  flags: i, g, m, s, x
 .fi
 .PP
 Examples:
 .PP
 .nf
-memex search 'lizard|catfooding'
-memex search '(?=.*lizard)(?=.*the)'
+memex search 'lizard OR catfooding'
+memex search 'lizard AND the'
+memex search '"hello world"'
+memex search '/Catfooding/i'
+memex search --format json 'lizard AND the'
 memex search -F 'hello world'
 memex search -i catfooding
 memex search -w food

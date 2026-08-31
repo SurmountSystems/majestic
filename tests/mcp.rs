@@ -205,15 +205,6 @@ fn mcp_search_all_uses_fake_home() {
         "fake-home search for Catfooding must hit, got {payload}"
     );
     for hit in hits {
-        let archive = hit["archive"].as_str().expect("archive path");
-        assert!(
-            !archive.starts_with("/home/hunter/memex"),
-            "search must not read the operator memex directory, got {archive}"
-        );
-        assert!(
-            Path::new(archive).starts_with(&home),
-            "search hits must come from the fake home {home:?}, got {archive}"
-        );
         assert!(
             hit["snippet"]
                 .as_str()
@@ -222,8 +213,86 @@ fn mcp_search_all_uses_fake_home() {
             "snippet must show the stored word, got {:?}",
             hit["snippet"]
         );
+        let occurrences = hit["occurrences"].as_array().expect("occurrences array");
+        assert!(
+            !occurrences.is_empty(),
+            "each snippet group must list occurrences, got {hit}"
+        );
+        for occurrence in occurrences {
+            let archive = occurrence["archive"].as_str().expect("archive path");
+            assert!(
+                !archive.starts_with("/home/hunter/memex"),
+                "search must not read the operator memex directory, got {archive}"
+            );
+            assert!(
+                Path::new(archive).starts_with(&home),
+                "search hits must come from the fake home {home:?}, got {archive}"
+            );
+        }
     }
     assert_operator_memex_untouched(operator_before);
+    let _ = fs::remove_dir_all(&home);
+}
+
+#[test]
+fn mcp_search_identical_sentence_is_one_snippet_two_occurrences() {
+    let home = test_dir("mcp-search-occurrences");
+    assert!(
+        !home.starts_with(operator_memex()),
+        "tests must not ingest into the operator memex directory"
+    );
+    let grok =
+        scoped_archive_path(&home.join("memex"), "agents/grok", "fixture").expect("grok scope");
+    let export = home.join("two.json");
+    fs::write(
+        &export,
+        r#"{"conversations":[{"conversation":{"id":"convo-alpha","title":"Synthetic convo-alpha"},"responses":[{"response":{"_id":"r-0-0","conversation_id":"convo-alpha","message":"same-sentence-token","sender":"assistant"}}]},{"conversation":{"id":"convo-beta","title":"Synthetic convo-beta"},"responses":[{"response":{"_id":"r-1-0","conversation_id":"convo-beta","message":"same-sentence-token","sender":"assistant"}}]}],"media_posts":[],"projects":[],"tasks":[]}"#,
+    )
+    .expect("write two-conversation export");
+    ingest(&grok, &[export]).expect("ingest two conversations");
+
+    let ctx = RpcContext::new(&home);
+    let payload = call_local(&ctx, "search", &json!({ "pattern": "same-sentence-token" }))
+        .expect("search RPC");
+    let hits = payload["hits"].as_array().expect("hits array");
+    assert_eq!(
+        hits.len(),
+        1,
+        "RPC presentation is one snippet for the same packed body, got {payload}"
+    );
+    assert_eq!(hits[0]["field"], "message");
+    assert!(
+        hits[0]["snippet"]
+            .as_str()
+            .expect("snippet")
+            .contains("same-sentence-token")
+    );
+    let occurrences = hits[0]["occurrences"]
+        .as_array()
+        .expect("occurrences array");
+    assert_eq!(
+        occurrences.len(),
+        2,
+        "two conversation ids must be two occurrence rows, got {payload}"
+    );
+    let mut ids: Vec<_> = occurrences
+        .iter()
+        .map(|occurrence| {
+            occurrence["conversation_id"]
+                .as_str()
+                .expect("conversation_id")
+        })
+        .collect();
+    ids.sort();
+    assert_eq!(ids, ["convo-alpha", "convo-beta"]);
+    for occurrence in occurrences {
+        assert_eq!(occurrence["field"], "message");
+        let archive = occurrence["archive"].as_str().expect("archive path");
+        assert!(
+            Path::new(archive).starts_with(&home),
+            "occurrence archive must stay under the fake home, got {archive}"
+        );
+    }
     let _ = fs::remove_dir_all(&home);
 }
 
