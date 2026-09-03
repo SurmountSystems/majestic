@@ -119,14 +119,14 @@ struct Scope {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Ingest Grok dumps, ChatGPT conversations zips/dirs, Facebook DYI zips, X account archives, Telegram result.json, session JSONL, markdown, Obsidian, reports, or session_docs sqlite.
+    /// Ingest Grok dumps, ChatGPT conversations zips/dirs, Facebook DYI zips, X account archives, Telegram result.json, session JSONL, markdown, story-card JSON arrays, character TOML, Obsidian, reports, or session_docs sqlite.
     Ingest {
         /// Output path. Wins over `--service`, `--account`, and shape inference. Error with a home scan.
         #[arg(short, long)]
         output: Option<PathBuf>,
         #[command(flatten)]
         scope: Scope,
-        /// Export dirs, zips, backend JSON, ChatGPT conversations, Facebook DYI, X account archives, Telegram result.json, JSONL, markdown, Obsidian vaults, reports, or session_docs sqlite. Omit to scan `$HOME` for known export shapes (max `scan.home_scan_max_depth` directory levels, default 8). Home scan skips system trash unless `scan.skip_system_trash` is false. Extra skips are `scan.skip_directories` in memex.toml (no skip flags).
+        /// Export dirs, zips, backend JSON, ChatGPT conversations, Facebook DYI, X account archives, Telegram result.json, JSONL, markdown, story-card JSON arrays, character TOML, Obsidian vaults, reports, or session_docs sqlite. Omit to scan `$HOME` for known export shapes (max `scan.home_scan_max_depth` directory levels, default 8). Home scan skips system trash unless `scan.skip_system_trash` is false. Extra skips are `scan.skip_directories` in memex.toml (no skip flags). Story-card JSON and character TOML need `--service` and `--account` (or `-o`).
         inputs: Vec<PathBuf>,
     },
     /// Search mmap archives under `$HOME/memex`. No scope flags means every archive.
@@ -717,6 +717,22 @@ mod cli_stdio_tests {
             Cli::try_parse_from(["memex", "search", "--format", "xml", "food"]).is_err(),
             "unknown --format must fail"
         );
+    }
+
+    #[test]
+    fn cli_search_format_toon() {
+        use super::SearchFormat;
+        let cli = Cli::try_parse_from(["memex", "search", "--format", "toon", "food"])
+            .expect("memex search --format toon");
+        match cli.command {
+            Command::Search {
+                format, pattern, ..
+            } => {
+                assert_eq!(format, Some(SearchFormat::Toon));
+                assert_eq!(pattern, "food");
+            }
+            _ => panic!("expected memex search"),
+        }
     }
 
     #[test]

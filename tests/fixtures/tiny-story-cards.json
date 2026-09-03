@@ -1,0 +1,18 @@
+[
+  {
+    "title": "Synth Lizard Card",
+    "type": "character",
+    "keys": "scard-key-aa11, lizard",
+    "value": "scard-value-bb22 unique lizard body",
+    "description": "optional leftover description",
+    "useForCharacterCreation": true,
+    "isSpoiler": false,
+    "showInStoryCards": true
+  },
+  {
+    "title": "Synth Place Card",
+    "type": "location",
+    "keys": ["scard-key-array-cc33", "swamp"],
+    "value": "scard-value-dd44 unique swamp body"
+  }
+]

@@ -1415,4 +1415,14 @@ fn search_format_toon_stdout_is_not_json_object() {
         text.contains("Catfooding") || text.contains("hits"),
         "TOON must carry the hit, got {text:?}"
     );
+    let (value, format) = majestic::parse_rpc_value(text.trim()).expect("decode TOON report");
+    assert_eq!(format, majestic::WireFormat::Toon);
+    let hits = value
+        .get("hits")
+        .and_then(|hits| hits.as_array())
+        .expect("TOON report must decode to a hits array");
+    assert!(
+        !hits.is_empty(),
+        "TOON hits array must include the Catfooding match, got {value}"
+    );
 }

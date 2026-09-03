@@ -75,6 +75,8 @@ majestic v1 files under `~/memex/**/*.archive` to `.majestic`. Optional:
 | Agent reports | directory ending in `.agents/reports` | `agents/reports/<user>.majestic` |
 | Obsidian vault | folder that contains `.obsidian/` | `notes/obsidian/<vault-dir-name>.majestic` |
 | Markdown tree | `.md` files and no `.obsidian/` (explicit path only; home scan skips arbitrary markdown) | `notes/markdown/<dir-name>.majestic` |
+| Story-card JSON array | JSON array of objects with `title`, `type`, `keys`, and `value`. Explicit path. Needs `--service` and `--account` (or `-o`). Home scan does not treat a random JSON array as story cards. | `{service}/{account}.majestic` |
+| Character TOML | `characters/{id}.toml`. Explicit path. Needs `--service` and `--account` (or `-o`). JSON character files are not ingested. | `{service}/{account}.majestic` |
 
 `<user>` is the process `$USER` unless `--account` is set. Telegram uses
 `personal_information.username` when that field is present and not empty,

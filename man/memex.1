@@ -1,4 +1,4 @@
-.TH MEMEX 1 "August 2026" "memex 0.1.0" "User Commands"
+.TH MEMEX 1 "August 2026" "memex 0.1.2" "User Commands"
 .SH NAME
 memex \- personal memex ingest, search, stats, and compress
 .SH SYNOPSIS
@@ -34,7 +34,14 @@ same packed span (one title or one message), not anywhere in the archive.
 Ingest Grok dumps, ChatGPT conversations, Facebook DYI zips, X account
 archives, Telegram
 .BR result.json ,
-session JSONL, markdown, Obsidian, reports, or session_docs sqlite.
+session JSONL, markdown, story-card JSON arrays, character TOML, Obsidian, reports, or session_docs sqlite.
+Story-card JSON and character TOML need
+.B --service
+and
+.BR --account
+(or
+.BR -o ).
+Home scan does not treat a random JSON array as story cards.
 With no paths,
 .B memex ingest
 scans

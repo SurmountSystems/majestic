@@ -50,6 +50,7 @@
 //! memex search -i catfooding
 //! memex search -w food
 //! memex search --format json 'lizard AND the'
+//! memex search --format toon 'lizard AND the'
 //! ```
 
 use std::ffi::OsStr;
@@ -63,9 +64,11 @@ pub mod bench_zstd;
 pub mod config;
 pub mod hash;
 pub mod ingest;
+mod ingest_characters;
 mod ingest_chatgpt;
 mod ingest_facebook;
 mod ingest_sqlite;
+mod ingest_story_cards;
 mod ingest_telegram;
 mod ingest_x;
 pub mod logging;

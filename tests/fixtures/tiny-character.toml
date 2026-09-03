@@ -1,0 +1,6 @@
+id = "synth-hero"
+title = "Synth Hero"
+type = "character"
+keys = "char-key-gg77"
+value = "char-value-hh88 unique body"
+description = "leftover character description"

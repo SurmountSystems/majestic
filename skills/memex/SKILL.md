@@ -53,8 +53,11 @@ Do not reimplement search or JSON ingest in a subagent.
    No symlinks. Home scan does not ingest arbitrary markdown trees. Does not walk `$HOME/memex` as a source. Home scan always infers
    per source; pass explicit paths to force `--service` / `--account`. `-o` with
    a scan is an error. With paths and no `--service` / `--account`, infer from
-   input shape (including markdown dirs). Session JSONL still needs those flags
-   or `-o`. Do not ingest `grok_oss.db`.
+   input shape (including markdown dirs). Session JSONL, story-card JSON arrays,
+   and `characters/{id}.toml` still need those flags or `-o`. Home scan does not
+   treat a random JSON array as story cards. YAML front matter stays leftover
+   extra; search hits the body after the closing `---`. Do not ingest
+   `grok_oss.db`.
 3. **Stats** still need `--service` and `--account`, or an archive path.
 
 ## Configuration
@@ -90,7 +93,10 @@ memex search -w food
 memex search 'lizard AND the'   # human AND: both words in the same title or message
 memex search '/Catfooding/i'
 memex search --format json 'lizard AND the'
+memex search --format toon 'lizard AND the'
 memex search --service agents/grok --account <xUsername> PATTERN
+memex ingest --service eridu/<campaign-id> --account <playthrough-id> story-cards.json
+memex ingest --service eridu/<campaign-id> --account <playthrough-id> characters/
 memex ingest /path/to/dump
 memex ingest /path/to/ChatExport_synth/result.json
 memex ingest /path/to/tiny-chatgpt.zip

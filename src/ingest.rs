@@ -1,7 +1,8 @@
 //! Stream Grok export JSON, Telegram Desktop `result.json`, ChatGPT
 //! `conversations-*.json`, Facebook DYI (`your_facebook_activity/`), X
 //! account archives (`data/account.js` plus tweets), zip sources (no extract),
-//! markdown, and grok-oss sqlite into an archive.
+//! markdown, story-card JSON arrays, character TOML, and grok-oss sqlite into
+//! an archive.
 //!
 //! The backend file is not parsed as a `serde_json::Value` document. Top-level
 //! keys are visited in order. Each `{conversation, responses}` object is
@@ -51,9 +52,11 @@ use crate::archive::{
 };
 use crate::config::Config;
 use crate::hash::{self, Digest};
+use crate::ingest_characters;
 use crate::ingest_chatgpt;
 use crate::ingest_facebook;
 use crate::ingest_sqlite;
+use crate::ingest_story_cards;
 use crate::ingest_telegram;
 use crate::ingest_x;
 use crate::schema::{
@@ -85,6 +88,8 @@ enum IngestSource {
     SessionDir(PathBuf),
     SessionJsonl(PathBuf),
     Markdown(PathBuf),
+    StoryCards(PathBuf),
+    Characters(PathBuf),
     Sqlite(PathBuf),
     Telegram(PathBuf),
     ChatGpt(PathBuf),
@@ -100,6 +105,8 @@ impl IngestSource {
             | Self::SessionDir(path)
             | Self::SessionJsonl(path)
             | Self::Markdown(path)
+            | Self::StoryCards(path)
+            | Self::Characters(path)
             | Self::Sqlite(path)
             | Self::Telegram(path)
             | Self::ChatGpt(path)
@@ -197,7 +204,7 @@ pub fn ingest_with_config(
         let found = discover_sources(input, home, config)?;
         if found.is_empty() {
             return Err(Error::ingest(format!(
-                "no Grok dump, ChatGPT conversations export, Telegram result.json, Facebook your_facebook_activity, X account archive, markdown, or session_docs sqlite under {}",
+                "no Grok dump, ChatGPT conversations export, Telegram result.json, Facebook your_facebook_activity, X account archive, markdown, story-card JSON, character TOML, or session_docs sqlite under {}",
                 input.display()
             )));
         }
@@ -211,6 +218,8 @@ pub fn ingest_with_config(
             IngestSource::SessionDir(path) => acc.ingest_session_dir(&path)?,
             IngestSource::SessionJsonl(path) => acc.ingest_session_jsonl(&path)?,
             IngestSource::Markdown(path) => acc.ingest_markdown(&path, home, config)?,
+            IngestSource::StoryCards(path) => acc.ingest_story_cards(&path)?,
+            IngestSource::Characters(path) => acc.ingest_characters(&path)?,
             IngestSource::Sqlite(path) => acc.ingest_sqlite(&path)?,
             IngestSource::Telegram(path) => acc.ingest_telegram(&path)?,
             IngestSource::ChatGpt(path) => acc.ingest_chatgpt(&path)?,
@@ -377,6 +386,8 @@ fn source_payload_identity(
         IngestSource::SessionDir(_)
         | IngestSource::SessionJsonl(_)
         | IngestSource::Markdown(_)
+        | IngestSource::StoryCards(_)
+        | IngestSource::Characters(_)
         | IngestSource::Sqlite(_)
         | IngestSource::Facebook(_)
         | IngestSource::Twitter(_) => Ok(None),
@@ -500,7 +511,8 @@ pub fn ingest_from_flags_with_config(
 /// archive zips and `data/account.js` trees, Telegram `result.json`,
 /// Obsidian vaults, `.agents/reports` directories, and
 /// `session_search.sqlite` with `session_docs`. Does not ingest arbitrary
-/// markdown trees. Skips skip-list names (including `sandbox-blocked-dir*`),
+/// markdown trees. Does not ingest a random JSON array as story cards, and
+/// does not ingest `characters/*.toml`. Skips skip-list names (including `sandbox-blocked-dir*`),
 /// system trash when [`crate::config::ScanConfig::skip_system_trash`], extra
 /// [`crate::config::ScanConfig::skip_directories`], `$HOME/memex` as a source,
 /// and symlinks. Does not skip `~/.agents/trash` unless that path is listed in
@@ -775,6 +787,32 @@ impl Accumulator {
             source_path,
             id: conversation_id.filter(|id| looks_like_uuid(id)),
             extra: sibling_jsonl_leftover(session_dir, jsonl_files)?,
+        });
+        Ok(())
+    }
+
+    fn ingest_story_cards(&mut self, path: &Path) -> Result<(), Error> {
+        let export_index = u32_fit_usize(self.exports.len(), "export count")?;
+        ingest_story_cards::for_each_story_card(path, |item| {
+            self.add_conversation(export_index, item)
+        })?;
+        self.exports.push(ExportManifest {
+            source_path: path.display().to_string(),
+            id: None,
+            extra: ExtraMap::new(),
+        });
+        Ok(())
+    }
+
+    fn ingest_characters(&mut self, path: &Path) -> Result<(), Error> {
+        let export_index = u32_fit_usize(self.exports.len(), "export count")?;
+        ingest_characters::for_each_character(path, |item| {
+            self.add_conversation(export_index, item)
+        })?;
+        self.exports.push(ExportManifest {
+            source_path: path.display().to_string(),
+            id: None,
+            extra: ExtraMap::new(),
         });
         Ok(())
     }
@@ -1616,6 +1654,12 @@ fn discover_sources(
         if is_markdown_file(input) {
             return Ok(vec![IngestSource::Markdown(input.to_path_buf())]);
         }
+        if ingest_story_cards::looks_like_story_card_file(input)? {
+            return Ok(vec![IngestSource::StoryCards(input.to_path_buf())]);
+        }
+        if ingest_characters::looks_like_characters_input(input)? {
+            return Ok(vec![IngestSource::Characters(input.to_path_buf())]);
+        }
         if ingest_telegram::is_result_json_name(input) {
             if ingest_telegram::telegram_meta(input)?.is_some()
                 || ingest_telegram::is_chatexport_result_json(input)
@@ -1686,6 +1730,9 @@ fn discover_sources(
     }
     if dir_has_markdown(input, home, config)? {
         return Ok(vec![IngestSource::Markdown(input.to_path_buf())]);
+    }
+    if ingest_characters::looks_like_characters_input(input)? {
+        return Ok(vec![IngestSource::Characters(input.to_path_buf())]);
     }
 
     let chat = input.join(CHAT_HISTORY_FILE_NAME);
@@ -1809,7 +1856,7 @@ pub fn infer_grok_export_scope(input: &Path) -> Result<InferredScope, Error> {
 /// Obsidian (`.obsidian/`), session_docs sqlite, `.agents/reports`, markdown
 /// tree. A dump directory that is not itself a known root still infers from
 /// nested known export shapes (the same walk as explicit ingest). Session
-/// JSONL still needs flags.
+/// JSONL, story-card JSON arrays, and character TOML still need flags.
 pub fn infer_ingest_scope(input: &Path) -> Result<InferredScope, Error> {
     infer_ingest_scope_in(input, Path::new(""), &Config::crate_defaults())
 }
@@ -1922,8 +1969,9 @@ fn infer_ingest_scope_from_discovered(
 /// `-o` is applied by the CLI before this function. `--service` and `--account`
 /// override inferred values. Omitted flags infer from input shape (Grok dump,
 /// Telegram `result.json`, Obsidian, session_docs sqlite, agent reports,
-/// markdown). Session JSONL still needs those flags or `-o`. Home scan does
-/// not use this function; it infers per source.
+/// markdown). Session JSONL, story-card JSON arrays, and character TOML still
+/// need those flags or `-o`. Home scan does not use this function; it infers
+/// per source. Home scan does not treat a random JSON array as story cards.
 pub fn resolve_ingest_archive(
     home: &Path,
     service: Option<&str>,

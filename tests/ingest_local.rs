@@ -262,6 +262,62 @@ fn ingest_markdown_dir_without_obsidian() {
 }
 
 #[test]
+fn yaml_front_matter_does_not_eat_the_body() {
+    let root = test_dir("yaml-front-matter-body");
+    let home = root.join("fake-home");
+    let note = fixtures().join("tiny-yaml-body.md");
+    let reports = ingest_from_flags(
+        &home,
+        None,
+        Some("notes/markdown"),
+        Some("yaml-body"),
+        std::slice::from_ref(&note),
+    )
+    .expect("ingest markdown with YAML front matter");
+    let archive = &reports[0].output;
+    assert_not_operator_memex(archive);
+
+    let opened = Archive::open(archive).expect("open yaml-body archive");
+    let root_rec = opened.deserialize_root().expect("rkyv deserialize");
+    assert_eq!(root_rec.conversations.len(), 1);
+    let item = &root_rec.conversations[0].item;
+    assert_eq!(
+        item.conversation.extra.get("leftover_gate"),
+        Some(&JsonAtom::Bool(true)),
+        "YAML front matter keys must survive as leftover extra"
+    );
+    assert_eq!(
+        item.conversation.extra.get("title"),
+        Some(&JsonAtom::String("yaml-frontmatter-title-ee55".to_owned())),
+        "YAML front matter title must stay leftover extra, not eat the body"
+    );
+    let message = item
+        .responses
+        .first()
+        .and_then(|response| response.response.message.as_ref())
+        .expect("markdown body is a message");
+    match message {
+        JsonAtom::String(body) => {
+            assert!(
+                body.contains("yaml-body-token-ff66"),
+                "body after the closing --- must remain, got {body:?}"
+            );
+            assert!(
+                !body.contains("leftover_gate"),
+                "YAML front matter must not replace the body, got {body:?}"
+            );
+        }
+        other => panic!("markdown body must be a string, got {other:?}"),
+    }
+    let body_hits = search(&opened, "yaml-body-token-ff66", false).expect("body search");
+    assert!(
+        !body_hits.is_empty(),
+        "YAML front matter must not eat the unique body after the closing ---"
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn ingest_session_docs_sqlite_searchable() {
     let root = test_dir("ingest-sqlite");
     let db = root.join("tiny-session-docs.sqlite");

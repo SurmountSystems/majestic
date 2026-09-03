@@ -907,7 +907,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "majestic"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "bao-tree",
@@ -927,6 +927,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
+ "toml",
  "toon-format",
  "tower",
  "tracing",
